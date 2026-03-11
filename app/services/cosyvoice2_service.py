@@ -1,3 +1,4 @@
+import hashlib
 import uuid
 import logging
 from pathlib import Path
@@ -80,6 +81,16 @@ class CosyVoice2Service:
             print(f"⚠️ 特征提取器修复失败: {e}")
 
     def generate(self, text, voice_id):
+        # 生成缓存键
+        cache_key = hashlib.md5(f"{text}_{voice_id}".encode()).hexdigest()
+        cache_file = settings.COSYVOICE2_OUTPUT_DIR / f"{cache_key}.wav"
+
+        # 检查缓存
+        if cache_file.exists():
+            print(f"✅ 使用缓存的音频: {cache_file}")
+            audio_url = settings.LOCAL_HOST + f"/static/cosyvoice/cosyvoice2_output/{cache_key}.wav"
+            logger.info(f"返回缓存音频 URL: {audio_url}")
+            return audio_url
 
         # 检查 CUDA
         if torch.cuda.is_available():
@@ -108,8 +119,8 @@ class CosyVoice2Service:
         prompt_wav = str(BASE_DIR) + voice_path
         logger.info(f"路径信息: BASE_DIR={BASE_DIR} ,prompt_wav={prompt_wav}")
         # text=str(text)
-        output_file_name = voice_id + uuid.uuid4().hex[:16] + ".wav"
-        output_file = settings.COSYVOICE2_OUTPUT_DIR / output_file_name
+        # output_file_name = f"{cache_key}.wav"
+        output_file = settings.COSYVOICE2_OUTPUT_DIR / f"{cache_key}.wav"
         # logger.info(f"生成语音: text={text}, voice_id={voice_id}, prompt_text={prompt_text}, prompt_wav={prompt_wav}, output_file={output_file}")
 
         try:
@@ -120,7 +131,6 @@ class CosyVoice2Service:
                     prompt_wav,  # 直接传入音频文件路径，不要用 load_wav！
                     text_frontend=False,
             )):
-                # output_file = "cloned_voice.wav"
 
                 # 改为：
                 tts_speech = output['tts_speech']
@@ -143,7 +153,7 @@ class CosyVoice2Service:
                 # 可选：播放提示
                 print(f"\n💡 可以用播放器打开: {os.path.abspath(output_file)}")
 
-                audio_url = settings.LOCAL_HOST + f"/static/cosyvoice/cosyvoice2_output/{output_file_name}"
+                audio_url = settings.LOCAL_HOST + f"/static/cosyvoice/cosyvoice2_output/{cache_key}.wav"
 
                 return audio_url
 
