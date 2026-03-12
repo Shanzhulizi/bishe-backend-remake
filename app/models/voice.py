@@ -1,7 +1,6 @@
-from sqlalchemy import create_engine, Column, String, DateTime, Float, Text, BigInteger, Integer
+from sqlalchemy import Column, String, DateTime, Float, Text, BigInteger, Integer
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.sql import func
-import uuid
 
 Base = declarative_base()
 

@@ -1,8 +1,4 @@
-from sqlalchemy import select
-from sqlalchemy.orm import Session
-
 from app.db.session import SessionLocal
-from app.models.message import Message
 from app.models.voice import Voice
 
 

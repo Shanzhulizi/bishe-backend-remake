@@ -9,7 +9,6 @@ from fastapi.middleware.cors import CORSMiddleware
 from starlette.staticfiles import StaticFiles
 
 from app.api.v1 import auth, characters, chat, conversation, voice, character_like, recommend
-
 from app.core.config import settings
 from app.core.logging import setup_logging
 from app.jobs.popularity_job import start_scheduler, stop_scheduler

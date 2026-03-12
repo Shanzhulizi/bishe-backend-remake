@@ -1,23 +1,21 @@
-from app.services.cosyvoice2_service import cosyvoice2_service
-from app.core.constants import ResponseCode
-from app.schemas.common import ResponseModel
-from app.schemas.voice import ASRResponse, TTSResponse, TTSRequest, CosyVoiceTTSRequest, CosyVoiceTTSResponse
-from app.services.ars_service import ASRService
-from app.services.tts_service import TTSService
 from typing import List, Dict
+
 import edge_tts
 from fastapi import APIRouter, UploadFile, File, Form, HTTPException, Depends
+from starlette.responses import StreamingResponse
 
 from app.api.deps import get_current_user
-from app.core.logging import get_logger
-
-# from app.services import cosyvoice_service
-from app.models.user import User
-from app.schemas.cosyvoice import GenerateRequest
-from app.services.cosyvoice_service import cosyvoice_service
-from app.services.voice_service import VoiceService
-
 from app.core.config import settings
+from app.core.constants import ResponseCode
+from app.core.logging import get_logger
+from app.models.user import User
+from app.schemas.common import ResponseModel
+from app.schemas.cosyvoice import GenerateRequest
+from app.schemas.voice import CosyVoiceTTSRequest, CosyVoiceTTSResponse
+from app.services.cosyvoice2_service import cosyvoice2_service
+# from app.services.cosyvoice_service import cosyvoice_service
+# from app.services.cosyvoice2_stream_service import cosyvoice2_stream_service
+from app.services.voice_service import VoiceService
 
 router = APIRouter()
 
@@ -80,48 +78,48 @@ async def list_voices(skip: int = 0, limit: int = 20):
     }
 
 
-@router.post("/cosyvoice/generate")
-async def generate_voice(request: GenerateRequest):
-    text = request.text,
-    if isinstance(text, tuple):
-        text = text[0]  # 提取第一个元素
-    # print(text)
-    voice_id = request.voice_id
+# @router.post("/cosyvoice/generate")
+# async def generate_voice(request: GenerateRequest):
+#     text = request.text,
+#     if isinstance(text, tuple):
+#         text = text[0]  # 提取第一个元素
+#     # print(text)
+#     voice_id = request.voice_id
+#
+#     logger.info(f"Generating voice for voice_id={voice_id} with text='{text}'")
+#
+#     audio_url = cosyvoice_service.generate(
+#         text,
+#         voice_id
+#     )
+#
+#     return {
+#         "code": 200,
+#         "message": "生成成功",
+#         "audio_url": audio_url
+#     }
 
-    logger.info(f"Generating voice for voice_id={voice_id} with text='{text}'")
 
-    audio_url = cosyvoice_service.generate(
-        text,
-        voice_id
-    )
-
-    return {
-        "code": 200,
-        "message": "生成成功",
-        "audio_url": audio_url
-    }
-
-
-@router.post("/cosyvoice2/generate")
-async def generate_voice(request: GenerateRequest):
-    text = request.text,
-    if isinstance(text, tuple):
-        text = text[0]  # 提取第一个元素
-    # print(text)
-    voice_id = request.voice_id
-
-    logger.info(f"Generating voice for voice_id={voice_id} with text='{text}'")
-
-    audio_url = cosyvoice2_service.generate(
-        text,
-        voice_id
-    )
-
-    return {
-        "code": 200,
-        "message": "生成成功",
-        "audio_url": audio_url
-    }
+# @router.post("/cosyvoice2/generate")
+# async def generate_voice(request: GenerateRequest):
+#     text = request.text,
+#     if isinstance(text, tuple):
+#         text = text[0]  # 提取第一个元素
+#     # print(text)
+#     voice_id = request.voice_id
+#
+#     logger.info(f"Generating voice for voice_id={voice_id} with text='{text}'")
+#
+#     audio_url = cosyvoice2_service.generate(
+#         text,
+#         voice_id
+#     )
+#
+#     return {
+#         "code": 200,
+#         "message": "生成成功",
+#         "audio_url": audio_url
+#     }
 
 
 @router.post("/cosyvoice_tts")
@@ -144,6 +142,23 @@ async def cosyvoice_tts(
         logger.error(f"生成语音失败: {e}")
         return ResponseModel.error(code=ResponseCode.INTERNAL_ERROR, msg="语音生成失败")
 
+
+# @router.post("/cosyvoice_tts_stream")
+# async def cosyvoice_tts(
+#         req: CosyVoiceTTSRequest
+# ):
+#     try:
+#         logger.info("开始生成语音")
+#         text = req.text
+#         voice_id = req.voice_id
+#
+#         return StreamingResponse(
+#             cosyvoice2_stream_service. generate_audio_stream(text, voice_id),
+#             media_type="audio/wav"
+#         )
+#     except Exception as e:
+#         logger.error(f"生成语音失败: {e}")
+#         return ResponseModel.error(code=ResponseCode.INTERNAL_ERROR, msg="语音生成失败")
 
 # =============================下面是旧接口======================================================
 
@@ -202,90 +217,90 @@ async def cosyvoice_tts(
 #         return ResponseModel.error(code=ResponseCode.INTERNAL_ERROR, msg="语音生成失败")
 
 
-@router.get("/chinese")
-async def get_chinese_voices() -> ResponseModel[List[Dict]]:
-    """
-    获取所有中文声音
-    """
-    logger.info("获取中文声音列表")
-    try:
-        # 获取所有声音
-        voices = await edge_tts.list_voices()
-
-        # 过滤出中文声音
-        chinese_voices = []
-        for voice in voices:
-            locale = voice.get('Locale', '')
-            if "CN" in locale:  # 中文
-                chinese_voices.append({
-                    "code": voice['ShortName'],
-                    'name': voice['ShortName'],
-                    # 'FriendlyName': voice['FriendlyName'],
-                    "gender": voice['Gender'],
-                    "locale": voice['Locale'],
-                    "preview_text": "你好，我是你的AI助手，很高兴认识你。"
-                })
-
-        # 按性别和名称排序
-        chinese_voices.sort(key=lambda x: (x['gender']
-                                           , x['name']
-                                           ))
-
-        return ResponseModel.success(
-            msg="获取中文声音成功",
-            data=chinese_voices
-        )
-    except Exception as e:
-        logger.error(f"获取中文声音失败: {e}")
-        return ResponseModel.error(
-            code=ResponseCode.INTERNAL_ERROR,
-            msg=f"获取中文声音失败: {str(e)}"
-        )
-
-
-@router.get("/preview/{voice_code}")
-async def preview_voice(voice_id: str) -> ResponseModel:
-    """
-    获取声音预览（生成试听音频）
-    """
-    logger.info(f"获取声音预览: {voice_id}")
-    try:
-        import edge_tts
-        import hashlib
-        from pathlib import Path
-
-        local_host = settings.LOCAL_HOST
-        static_dir = settings.STATIC_DIR
-        preview_text = "你好，我是你的AI助手，很高兴认识你。"
-        # 生成缓存key
-        cache_key = hashlib.md5(f"{preview_text}_{voice_id}".encode()).hexdigest()
-
-        # ✅ 使用 settings 中的 STATIC_DIR（这是项目根目录的 static）
-        static_dir = Path(static_dir)  # 应该是 E:/Code/Python/AIChat/static
-        preview_dir = static_dir / "previews"
-        preview_dir.mkdir(parents=True, exist_ok=True)
-        cache_file = preview_dir / f"{cache_key}.mp3"
-
-        print(f"预览音频缓存路径: {cache_file}")  # 应该是 E:/Code/Python/AIChat/static/previews/xxx.mp3
-
-        # 如果缓存不存在，生成音频
-        if not cache_file.exists():
-            communicate = edge_tts.Communicate(preview_text, voice_id)
-            await communicate.save(str(cache_file))
-
-        # 返回给前端的 URL
-        audio_url = f"{local_host}/static/previews/{cache_key}.mp3"
-
-        return ResponseModel.success(
-            msg="获取预览成功",
-            data={
-                "audio_url": audio_url,
-                "voice_id": voice_id
-            }
-        )
-    except Exception as e:
-        logger.error(f"生成预览失败: {e}")
-        return ResponseModel.error(
-            code=ResponseCode.INTERNAL_ERROR,
-            msg=f"生成预览失败: {str(e)}"
-        )
+# @router.get("/chinese")
+# async def get_chinese_voices() -> ResponseModel[List[Dict]]:
+#     """
+#     获取所有中文声音
+#     """
+#     logger.info("获取中文声音列表")
+#     try:
+#         # 获取所有声音
+#         voices = await edge_tts.list_voices()
+#
+#         # 过滤出中文声音
+#         chinese_voices = []
+#         for voice in voices:
+#             locale = voice.get('Locale', '')
+#             if "CN" in locale:  # 中文
+#                 chinese_voices.append({
+#                     "code": voice['ShortName'],
+#                     'name': voice['ShortName'],
+#                     # 'FriendlyName': voice['FriendlyName'],
+#                     "gender": voice['Gender'],
+#                     "locale": voice['Locale'],
+#                     "preview_text": "你好，我是你的AI助手，很高兴认识你。"
+#                 })
+#
+#         # 按性别和名称排序
+#         chinese_voices.sort(key=lambda x: (x['gender']
+#                                            , x['name']
+#                                            ))
+#
+#         return ResponseModel.success(
+#             msg="获取中文声音成功",
+#             data=chinese_voices
+#         )
+#     except Exception as e:
+#         logger.error(f"获取中文声音失败: {e}")
+#         return ResponseModel.error(
+#             code=ResponseCode.INTERNAL_ERROR,
+#             msg=f"获取中文声音失败: {str(e)}"
+#         )
+#
+#
+# @router.get("/preview/{voice_code}")
+# async def preview_voice(voice_id: str) -> ResponseModel:
+#     """
+#     获取声音预览（生成试听音频）
+#     """
+#     logger.info(f"获取声音预览: {voice_id}")
+#     try:
+#         import edge_tts
+#         import hashlib
+#         from pathlib import Path
+#
+#         local_host = settings.LOCAL_HOST
+#         static_dir = settings.STATIC_DIR
+#         preview_text = "你好，我是你的AI助手，很高兴认识你。"
+#         # 生成缓存key
+#         cache_key = hashlib.md5(f"{preview_text}_{voice_id}".encode()).hexdigest()
+#
+#         # ✅ 使用 settings 中的 STATIC_DIR（这是项目根目录的 static）
+#         static_dir = Path(static_dir)  # 应该是 E:/Code/Python/AIChat/static
+#         preview_dir = static_dir / "previews"
+#         preview_dir.mkdir(parents=True, exist_ok=True)
+#         cache_file = preview_dir / f"{cache_key}.mp3"
+#
+#         print(f"预览音频缓存路径: {cache_file}")  # 应该是 E:/Code/Python/AIChat/static/previews/xxx.mp3
+#
+#         # 如果缓存不存在，生成音频
+#         if not cache_file.exists():
+#             communicate = edge_tts.Communicate(preview_text, voice_id)
+#             await communicate.save(str(cache_file))
+#
+#         # 返回给前端的 URL
+#         audio_url = f"{local_host}/static/previews/{cache_key}.mp3"
+#
+#         return ResponseModel.success(
+#             msg="获取预览成功",
+#             data={
+#                 "audio_url": audio_url,
+#                 "voice_id": voice_id
+#             }
+#         )
+#     except Exception as e:
+#         logger.error(f"生成预览失败: {e}")
+#         return ResponseModel.error(
+#             code=ResponseCode.INTERNAL_ERROR,
+#             msg=f"生成预览失败: {str(e)}"
+#         )
