@@ -1,3 +1,4 @@
+import os
 import shutil
 import uuid
 
@@ -128,7 +129,7 @@ from app.schemas.character import (
 router = APIRouter()
 
 
-@router.get("/", response_model=List[CharacterListItem])
+@router.get("/", response_model=ResponseModel[List[CharacterListItem]])
 def get_characters(
         skip: int = Query(0, ge=0),
         limit: int = Query(20, ge=1, le=100),
@@ -153,10 +154,10 @@ def get_characters(
     from fastapi.responses import JSONResponse
     response = JSONResponse(content=[c.__dict__ for c in characters])
     response.headers["X-Total-Count"] = str(total)
-    return characters
+    return ResponseModel.success(data=characters)
 
 
-@router.get("/{character_id}", response_model=CharacterDetailResponse)
+@router.get("/{character_id}", response_model=ResponseModel[CharacterDetailResponse])
 def get_character(
         character_id: int,
         db: Session = Depends(get_db)
@@ -166,15 +167,15 @@ def get_character(
     character = service.get_character(character_id)
     if not character:
         raise HTTPException(status_code=404, detail="角色不存在")
-    return character
+    return ResponseModel.success(data= character)
 
 
-@router.post("/", response_model=CharacterDetailResponse, status_code=201)
+@router.post("/", response_model=ResponseModel[CharacterDetailResponse])
 async def create_character(
         name: str = Form(..., min_length=1, max_length=50),
         description: Optional[str] = Form(None),
         worldview: Optional[str] = Form(None),
-        avatar: Optional[str] = Form(None),
+        avatar: Optional[UploadFile] = File(None),
         voice_id: Optional[str] = Form(None),
         greeting: Optional[str] = Form(None),
         category_ids: str = Form("[]"),  # JSON string
@@ -183,6 +184,31 @@ async def create_character(
         db: Session = Depends(get_db)
 ):
     """创建新角色"""
+    # 处理头像上传
+    avatar_url = None
+    # if avatar:
+    #     # 保存头像文件
+    #     file_ext = os.path.splitext(avatar.filename)[1]
+    #     file_name = f"{uuid.uuid4().hex}{file_ext}"
+    #     upload_dir = Path("static/avatars")
+    #     upload_dir.mkdir(parents=True, exist_ok=True)
+    #
+    #     file_path = upload_dir / file_name
+    #     with open(file_path, "wb") as buffer:
+    #         shutil.copyfileobj(avatar.file, buffer)
+    #
+    #     avatar_url = f"/static/avatars/{file_name}"
+
+    if avatar:
+        ext = avatar.filename.split(".")[-1]
+        filename = f"{uuid.uuid4()}.{ext}"
+        file_path = AVATAR_DIR / filename
+
+        with open(file_path, "wb") as buffer:
+            shutil.copyfileobj(avatar.file, buffer)
+
+        avatar_url = f"http://localhost:8000/static/avatars/{filename}"
+    #
 
     # 解析JSON数组
     try:
@@ -195,7 +221,7 @@ async def create_character(
         name=name,
         description=description,
         worldview=worldview,
-        avatar=avatar,
+        avatar=avatar_url,
         voice_id=voice_id,
         greeting=greeting,
         category_ids=cat_ids,
@@ -204,10 +230,18 @@ async def create_character(
     )
 
     service = CharacterService(db)
-    return service.create_character(data)
+    char= service.create_character(data)
+    return ResponseModel.success(data = char)
+
+import os
+import shutil
+import uuid
+from pathlib import Path
+from fastapi import UploadFile, File, Form, HTTPException
+from typing import Optional
 
 
-@router.put("/{character_id}", response_model=CharacterDetailResponse)
+@router.put("/{character_id}", response_model=ResponseModel[CharacterDetailResponse])
 async def update_character(
         character_id: int,
         name: Optional[str] = Form(None),
@@ -258,8 +292,8 @@ async def update_character(
     data = CharacterUpdate(**data_dict)
 
     service = CharacterService(db)
-    return service.update_character(character_id, data)
-
+    char = service.update_character(character_id, data)
+    return ResponseModel.success(data=char)
 
 @router.delete("/{character_id}")
 def delete_character(
@@ -269,15 +303,15 @@ def delete_character(
     """删除角色（软删除）"""
     service = CharacterService(db)
     service.delete_character(character_id)
-    return {"message": "删除成功"}
+    return ResponseModel.success(msg="角色已删除")
 
 
-@router.post("/{character_id}/popularity")
-def update_popularity(
-        character_id: int,
-        db: Session = Depends(get_db)
-):
-    """更新角色热度分数"""
-    service = CharacterService(db)
-    service.update_popularity_score(character_id)
-    return {"message": "热度更新成功"}
+# @router.post("/{character_id}/popularity")
+# def update_popularity(
+#         character_id: int,
+#         db: Session = Depends(get_db)
+# ):
+#     """更新角色热度分数"""
+#     service = CharacterService(db)
+#     service.update_popularity_score(character_id)
+#     return {"message": "热度更新成功"}

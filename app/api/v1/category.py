@@ -4,65 +4,70 @@ from sqlalchemy.orm import Session
 from typing import List, Optional
 
 from app.api.deps import get_db
+from app.schemas.common import ResponseModel
 from app.services.category_service import CategoryService
 from app.schemas.category import CategoryCreate, CategoryUpdate, CategoryResponse
 
 router = APIRouter()
 
 
-@router.get("/", response_model=List[CategoryResponse])
+@router.get("/", response_model=ResponseModel[List[CategoryResponse]])
 def get_categories(
-    skip: int = Query(0, ge=0),
-    limit: int = Query(100, ge=1, le=200),
-    db: Session = Depends(get_db)
+        skip: int = Query(0, ge=0),
+        limit: int = Query(100, ge=1, le=200),
+        db: Session = Depends(get_db)
 ):
     """获取所有类别"""
     service = CategoryService(db)
     categories = service.get_categories(skip=skip, limit=limit)
-    return categories
+    return ResponseModel.success(data=categories)
+    # return categories
 
 
-@router.get("/{category_id}", response_model=CategoryResponse)
+@router.get("/{category_id}", response_model=ResponseModel[CategoryResponse])
 def get_category(
-    category_id: int,
-    db: Session = Depends(get_db)
+        category_id: int,
+        db: Session = Depends(get_db)
 ):
     """获取单个类别"""
     service = CategoryService(db)
     category = service.get_category(category_id)
     if not category:
         raise HTTPException(status_code=404, detail="类别不存在")
-    return category
+
+    return ResponseModel.success(data=category)
+    # return category
 
 
-@router.post("/", response_model=CategoryResponse, status_code=201)
+@router.post("/", response_model=ResponseModel[CategoryResponse], status_code=201)
 def create_category(
-    data: CategoryCreate,
-    db: Session = Depends(get_db)
+        data: CategoryCreate,
+        db: Session = Depends(get_db)
 ):
     """创建新类别"""
     service = CategoryService(db)
-    return service.create_category(data)
+    category = service.create_category(data)
+    return ResponseModel.success(data=category)
 
 
-@router.put("/{category_id}", response_model=CategoryResponse)
+@router.put("/{category_id}", response_model=ResponseModel[CategoryResponse])
 def update_category(
-    category_id: int,
-    data: CategoryUpdate,
-    db: Session = Depends(get_db)
+        category_id: int,
+        data: CategoryUpdate,
+        db: Session = Depends(get_db)
 ):
     """更新类别"""
     service = CategoryService(db)
-    return service.update_category(category_id, data)
+    updated_category = service.update_category(category_id, data)
+    return ResponseModel.success(data=updated_category)
 
 
-@router.delete("/{category_id}")
+@router.delete("/{category_id}", response_model=ResponseModel)
 def delete_category(
-    category_id: int,
-    db: Session = Depends(get_db)
+        category_id: int,
+        db: Session = Depends(get_db)
 ):
     """删除类别"""
     service = CategoryService(db)
     service.delete_category(category_id)
-    return {"message": "删除成功"}
-
+    return ResponseModel.success(msg="删除成功")
