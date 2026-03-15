@@ -4,6 +4,29 @@ from sqlalchemy.orm import relationship
 from app.db.base import Base  # declarative_base
 
 
+from sqlalchemy import Column, BigInteger, String, Text, Boolean, Integer, Float, TIMESTAMP, Table, ForeignKey
+from sqlalchemy.orm import relationship
+from sqlalchemy.sql import func
+
+
+
+
+# 关联表
+character_categories = Table(
+    'character_categories',
+    Base.metadata,
+    Column('character_id', BigInteger, ForeignKey('character.id', ondelete='CASCADE'), primary_key=True),
+    Column('category_id', Integer, ForeignKey('categories.id', ondelete='CASCADE'), primary_key=True)
+)
+
+character_tags = Table(
+    'character_tags',
+    Base.metadata,
+    Column('character_id', BigInteger, ForeignKey('character.id', ondelete='CASCADE'), primary_key=True),
+    Column('tag_id', Integer, ForeignKey('tags.id', ondelete='CASCADE'), primary_key=True)
+)
+
+
 class Character(Base):
     __tablename__ = "character"
 
@@ -16,16 +39,9 @@ class Character(Base):
     updated_at = Column(TIMESTAMP(timezone=True), server_default=func.now(), onupdate=func.now())
 
     avatar = Column(Text, nullable=True)  # 👈 新增
-    voice_style = Column(
-        String(32),
-        nullable=False,
-        default="default"
-    )
 
 
-    # voice_code = Column(String(50), nullable=True)  # 存储声音代码
-    voice_id = Column(String(64), nullable=True)  # 存储声音代码
-    voice_name = Column(String(50), nullable=True)  # 存储声音名称（可选）
+
 
     # 新增统计字段
     usage_count = Column(Integer, default=0, nullable=False)  # 使用人数
@@ -37,10 +53,11 @@ class Character(Base):
     # 可选：热度得分（可定时计算）
     popularity_score = Column(Float, default=0.0, nullable=False)
 
-    # 关联角色配置
-    config = relationship(
-        "CharacterConfigs",
-        uselist=False,
-        back_populates="character",
-        cascade="all, delete-orphan"
-    )
+    voice_id = Column(String(64), nullable=True)  # 存储声音代码
+
+    greeting = Column(Text, nullable=True)  # 开场白
+    is_official= Column(Boolean, default=False, nullable=False)  # 是否官方角色
+
+    # 关联关系
+    categories = relationship("Category", secondary=character_categories, backref="characters")
+    tags = relationship("Tag", secondary=character_tags, backref="characters")

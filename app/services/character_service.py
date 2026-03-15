@@ -6,34 +6,89 @@ from app.core.logging import get_logger
 from app.persona.builder import PersonaBuilder
 from app.repositories.character_repo import CharacterRepository
 from app.schemas.character import CharacterCreate
+from sqlalchemy.orm import Session, joinedload
+from sqlalchemy import func, or_
+from fastapi import HTTPException
+from typing import List, Optional
+from datetime import datetime
 
-logger= get_logger(__name__)
+from app.models.character import Character, character_categories, character_tags
+from app.models.category import Category
+from app.models.tag import Tag
+from app.schemas.character import CharacterCreate, CharacterUpdate
+
+logger = get_logger(__name__)
+from sqlalchemy.orm import Session, joinedload
+from sqlalchemy import func, or_
+from fastapi import HTTPException
+from typing import List, Optional
+from datetime import datetime
+
+from app.models.character import Character, character_categories, character_tags
+from app.models.category import Category
+from app.models.tag import Tag
+from app.schemas.character import CharacterCreate, CharacterUpdate
+
+
 class CharacterService:
-    def __init__(self, repo: CharacterRepository):
-        self.repo = repo
+    def __init__(self, db: Session):
+        self.db = db
+        self.character_repo = CharacterRepository(db)
 
-    def create_character(self, db: Session, data: CharacterCreate):
-        persona = PersonaBuilder.apply_tags(data.tags)
+    def get_characters(
+            self,
+            skip: int = 0,
+            limit: int = 20,
+            category_id: Optional[int] = None,
+            tag_id: Optional[int] = None,
+            keyword: Optional[str] = None,
+            is_official: Optional[bool] = None
+    ) -> tuple[List[Character], int]:
+        """获取角色列表（支持筛选和搜索）"""
 
-        logger.info(f"voice_code:{data.voice_id}")
-        return self.repo.create_character(
-            db,
-            name=data.name,
-            avatar=data.avatar,
-            description=data.description,
-            worldview=data.worldview,
-            persona=persona,
-            voice_id=data.voice_id
-        )
+        characters, total = self.character_repo.get_all(skip, limit, category_id, tag_id, keyword, is_official)
 
-    def get_character_by_id(self, db, character_id):
-        char = self.repo.get_basic_by_id(db, character_id)
-        if not char:
-            raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND,
-                detail="角色不存在"
-            )
-        return char
+        return characters, total
 
-    def get_all_characters_basic(self, db: Session):
-        return self.repo.get_all_basic(db)
+    def get_character(self, character_id: int) -> Optional[Character]:
+        """获取单个角色详情"""
+        return self.character_repo.get_by_id_with_relations(character_id)
+
+    def create_character(self, data: CharacterCreate) -> Character:
+        """创建角色"""
+
+        # 不检查名称是否已经存在，允许重复名称，鼓励用户创作
+        # existing = self.db.query(Character).filter(
+        #     Character.name == data.name
+        # ).first()
+        # if existing:
+        #     raise HTTPException(status_code=400, detail="角色名称已存在")
+
+        # 创建角色
+        character  = self.character_repo.create_with_relations(data)
+        return character
+
+    def update_character(self, character_id: int, data: CharacterUpdate) -> Character:
+        """更新角色"""
+
+        # 2. 转换为字典
+        update_data = data.dict(exclude_unset=True)
+
+        # 3. 调用 repo 更新
+        character = self.character_repo.update_complete(character_id, update_data)
+
+        if not character:
+            raise HTTPException(status_code=404, detail="角色不存在")
+
+        # 4. 提交事务
+        self.db.commit()
+        self.db.refresh(character)
+
+        return character
+
+    def delete_character(self, character_id: int):
+        """删除角色（软删除）"""
+        is_deleted = self.character_repo.soft_delete(character_id)
+        if not is_deleted:
+            raise HTTPException(status_code=404, detail="删除错误")
+        self.db.commit()

@@ -1,37 +1,30 @@
-from typing import Optional
+from datetime import datetime
+from typing import Optional, List
 
 from pydantic import BaseModel, Field
 
 
-class DialogueStyle(BaseModel):
-    directness: float = Field(ge=0, le=1)
-    verbosity: float = Field(ge=0, le=1)
-    emotional_expressiveness: float = Field(ge=0, le=1)
-    guidance_style: float = Field(ge=0, le=1)
-    dialog_control: float = Field(ge=0, le=1)
-    tolerance: float = Field(ge=0, le=1)
+
+# 简化的类别信息（用于列表页）
+from app.schemas.category import CategoryResponse
+from app.schemas.tag import TagResponse
 
 
-class Traits(BaseModel):
-    bravery: float = Field(ge=0, le=1)
-    kindness: float = Field(ge=0, le=1)
-    logic: float = Field(ge=0, le=1)
-    emotionality: float = Field(ge=0, le=1)
-    curiosity: float = Field(ge=0, le=1)
-    discipline: float = Field(ge=0, le=1)
-    confidence: float = Field(ge=0, le=1)
-    flexibility: float = Field(ge=0, le=1)
+class CategoryInfo(BaseModel):
+    id: int
+    name: str
+
+    class Config:
+        orm_mode = True
 
 
-class MemoryStrategy(BaseModel):
-    short_term_memory: int = Field(ge=1, le=20)
-    long_term_memory: int = Field(ge=10, le=200)
+# 简化的标签信息（用于列表页）
+class TagInfo(BaseModel):
+    id: int
+    name: str
 
-
-class Persona(BaseModel):
-    traits: Traits
-    dialogue_style: DialogueStyle
-    memory_strategy: MemoryStrategy
+    class Config:
+        orm_mode = True
 
 
 class CharacterCreate(BaseModel):
@@ -39,52 +32,107 @@ class CharacterCreate(BaseModel):
     avatar: Optional[str] = None
     description: Optional[str] = None
     worldview: Optional[str] = None
-    # voice: string
-    tags: list[str] = []
-    # voice_code: Optional[str] = None , # 新增
-    voice_id : Optional[str] = None
-
-
-class CharacterResponse(BaseModel):
-    id: int
-    name: str
-    avatar: Optional[str] = None
-    description: Optional[str] = None
-    worldview: Optional[str] = None
-    is_active: bool = True
-    persona: Optional[Persona] = None  # 对应 CharacterConfigs.persona
-
-    # voice_code: Optional[str]= None  # 新增
     voice_id: Optional[str] = None
-    class Config:
-        from_attributes = True
+    greeting: Optional[str] = None
+    category_ids: List[int] = Field(default=[])  # 类别ID列表
+    tag_ids: List[int] = Field(default=[])  # 标签ID列表
+    is_official: bool = False
 
 
+# 更新角色请求
+class CharacterUpdate(BaseModel):
+    name: Optional[str] = Field(None, min_length=1, max_length=50)
+    avatar: Optional[str] = None
+    description: Optional[str] = Field(None, max_length=500)
+    worldview: Optional[str] = Field(None, max_length=500)
+    greeting: Optional[str] = Field(None, max_length=200)
+    voice_id: Optional[str] = None
+    category_ids: Optional[List[int]] = None
+    tag_ids: Optional[List[int]] = None
+    is_official: Optional[bool] = None
+    is_active: Optional[bool] = None
 
 
+# class CharacterResponse(BaseModel):
+#     id: int
+#     name: str
+#     avatar: Optional[str] = None
+#     description: Optional[str] = None
+#     worldview: Optional[str] = None
+#     is_active: bool = True
+#
+#     voice_id: Optional[str] = None
+#
+#
+# class CharacterListItem(BaseModel):
+#     id: int
+#     name: str
+#     avatar: Optional[str] = None
+#     description: Optional[str] = None
+#     # worldview: Optional[str] = None
+#     # tags: List[str] = []
+#     like_count: int = 0
+#     # is_liked: bool = False
+#     usage_count: int = 0
+#     chat_count: int = 0
+#     popularity_score: float = 0.0  # 热度得分
+#     recent_usage: int = 0  # 近期使用数
+#
+#     # recent_likes: int = 0  # 近期点赞数    # 数据库没有这一项
+#     # hot_level: int = 0  # 热度等级 1-5
+#
+#     class Config:
+#         from_attributes = True
+
+
+# 角色列表项响应（精简版）
 class CharacterListItem(BaseModel):
     id: int
     name: str
     avatar: Optional[str] = None
     description: Optional[str] = None
-    # worldview: Optional[str] = None
-    # tags: List[str] = []
-    like_count: int = 0
-    # is_liked: bool = False
-    usage_count: int = 0
-    chat_count: int = 0
-    popularity_score: float = 0.0  # 热度得分
-    recent_usage: int = 0  # 近期使用数
-    # recent_likes: int = 0  # 近期点赞数    # 数据库没有这一项
-    # hot_level: int = 0  # 热度等级 1-5
+    categories: List[CategoryInfo] = []
+    tags: List[TagInfo] = []
+    popularity_score: float
 
     class Config:
-        from_attributes = True
+        orm_mode = True
 
 
+# 角色详情响应（完整版）
+class CharacterDetailResponse(BaseModel):
+    id: int
+    name: str
+    description: Optional[str] = None
+    worldview: Optional[str] = None
+    avatar: Optional[str] = None
+    voice_id: Optional[str] = None
+    greeting: Optional[str] = None
+    is_official: bool
+    is_active: bool
 
+    # 完整类别和标签信息
+    categories: List[CategoryResponse] = []
+    tags: List[TagResponse] = []
 
+    # 统计信息
+    usage_count: int
+    chat_count: int
+    like_count: int
+    popularity_score: float
 
+    # 时间信息
+    created_at: datetime
+    updated_at: datetime
+    last_used_at: Optional[datetime] = None
 
+    class Config:
+        orm_mode = True
 
-
+# 分页响应
+class PaginatedResponse(BaseModel):
+    total: int
+    items: List
+    page: int
+    size: int
+    pages: int

@@ -20,22 +20,23 @@ router = APIRouter()
 
 logger = get_logger(__name__)
 
-@router.post("/send", response_model=ChatResponse)
-async def send_chat(
-        req: ChatRequest,
-        db=Depends(get_db),
-        user=Depends(get_current_user)
-):
-    logger.info(f"用户 {user.id} 发送文字消息给角色 {req.character_id}")
-    reply = await ChatService.send_message(
-        db=db,
-        user_id=user.id,
-        character_id=req.character_id,
-        content=req.message,
-    )
-    logger.info(f"角色 {req.character_id} 回复用户 {user.id} 消息")
-    return {"reply": reply
-            }
+# @router.post("/send", response_model=ChatResponse)
+# async def send_chat(
+#         req: ChatRequest,
+#         db=Depends(get_db),
+#         user=Depends(get_current_user)
+# ):
+#     service = ChatService(db)
+#     logger.info(f"用户 {user.id} 发送文字消息给角色 {req.character_id}")
+#     reply = await service.send_message(
+#         db=db,
+#         user_id=user.id,
+#         character_id=req.character_id,
+#         content=req.message,
+#     )
+#     logger.info(f"角色 {req.character_id} 回复用户 {user.id} 消息")
+#     return {"reply": reply
+#             }
 
 @router.post("/stream")
 async def send_chat_stream(
@@ -45,7 +46,8 @@ async def send_chat_stream(
 ):
     async def generator():
         try:
-            async for token in ChatService.send_message_stream(
+            service = ChatService(db)
+            async for token in service.send_message_stream(
                     db=db,
                     user_id=user.id,
                     character_id=req.character_id,
@@ -95,6 +97,7 @@ async def send_chat_stream(
 #     }
 #
 
+# TODO 这是将来可能做的语音通话，别给删了
 #
 # @router.post("/voice")
 # async def voice_chat(
