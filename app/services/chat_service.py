@@ -9,8 +9,7 @@ from app.core.logging import get_logger
 from app.repositories.character_repo import CharacterRepository
 from app.repositories.conversation_repo import ConversationRepository
 from app.repositories.message_repo import MessageRepository
-
-from app.services.character_stat_service import CharacterStatService
+from app.services.behavior_service import BehaviorService
 
 logger = get_logger(__name__)
 
@@ -180,7 +179,6 @@ class ChatService:
     #             print(f"保存消息失败: {e}")
     #             db.rollback()
 
-
     async def send_message_stream(
             self,
             db: AsyncSession,  # 改为 AsyncSession
@@ -247,8 +245,9 @@ class ChatService:
             await db.commit()
 
             # 10. 记录统计（可以异步执行，不阻塞）
+            behavior_service = BehaviorService(self.db)
             asyncio.create_task(
-                CharacterStatService.record_chat(db, character_id, user_id)
+                behavior_service.record_chat(user_id, character_id)
             )
 
         except Exception as e:
