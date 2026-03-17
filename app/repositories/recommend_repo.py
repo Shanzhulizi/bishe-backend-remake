@@ -1,9 +1,9 @@
-# app/services/hot_recommend_service.py
-from datetime import timedelta, datetime
-from operator import and_, or_
-from typing import List, Optional
-from sqlalchemy import case
 
+from datetime import timedelta, datetime
+from operator import and_
+from typing import List
+
+from sqlalchemy import case
 from sqlalchemy import func, desc
 from sqlalchemy.orm import Session, joinedload
 

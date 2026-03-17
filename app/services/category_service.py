@@ -1,12 +1,10 @@
 # app/services/category_service.py
-from sqlalchemy.orm import Session
-from sqlalchemy import func
-from fastapi import HTTPException
 from typing import List, Optional
-from datetime import datetime
+
+from fastapi import HTTPException
+from sqlalchemy.orm import Session
 
 from app.models.category import Category
-from app.models.character import character_categories
 from app.repositories.category_repo import CategoryRepository
 from app.schemas.category import CategoryCreate, CategoryUpdate
 

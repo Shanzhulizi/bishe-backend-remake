@@ -11,7 +11,7 @@ from starlette.staticfiles import StaticFiles
 from app.api.v1 import auth, characters, chat, conversation, voice, character_like, recommend, category, tag
 from app.core.config import settings
 from app.core.logging import setup_logging
-from app.jobs.popularity_job import start_scheduler, stop_scheduler
+from app.tasks.update_popularity import start_scheduler, stop_scheduler
 
 if platform.system() == "Windows":
     asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
@@ -48,7 +48,7 @@ async def lifespan(app: FastAPI):
 app = FastAPI(
     title="AI角色扮演聊天平台",
     description="基于FastAPI和Vue3的AI角色扮演聊天网站",
-    # lifespan=lifespan, # 定时任务的开关
+    lifespan=lifespan, # 定时任务的开关
     version="1.0.0"
 )
 
@@ -75,10 +75,6 @@ app.include_router(conversation.router, prefix="/api/conversation", tags=["对�
 app.include_router(voice.router, prefix="/api/voice", tags=["语音"])
 app.include_router(character_like.router, prefix="/api/character-like", tags=["角色点赞"])
 app.include_router(recommend.router, prefix="/api/recommend", tags=["推荐接口"])
-# app.include_router(xtts.router, prefix="/api/xtts", tags=["声音接口"])
-# app.include_router(cosyvoice.router, prefix="/api/cosyvoice", tags=["声音接口"])
-# app.include_router(cosyvoice2.router, prefix="/api/cosyvoice2", tags=["声音接口"])
-
 app.include_router(category.router, prefix="/api/category", tags=["角色类别"]   )
 app.include_router(tag.router, prefix="/api/tag", tags=["角色标签"])
 
@@ -97,7 +93,7 @@ app.mount(
 
 # @app.onmodel()_event("startup")
 # async def startup_event():
-#     ASRService.get_  # 预加载模型
+    # ASRService.get_  # 预加载模型
 
 if __name__ == "__main__":
     uvicorn.run(
@@ -105,6 +101,5 @@ if __name__ == "__main__":
         host="127.0.0.1",
         port=8000,
         # reload=True,
-
         loop="asyncio"  # 关键参数
     )

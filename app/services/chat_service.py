@@ -1,9 +1,10 @@
+import asyncio
+
 from fastapi import HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import Session
 
-import asyncio
-from app.ai.client import chat_completion, chat_completion_stream
+from app.ai.client import chat_completion_stream
 from app.ai.prompt_builder import build_system_prompt
 from app.core.logging import get_logger
 from app.repositories.character_repo import CharacterRepository

@@ -1,13 +1,12 @@
 # app/repositories/collaborative_repo.py
-from sqlalchemy import and_, func, desc
-from sqlalchemy.orm import Session, joinedload
-from typing import List, Dict, Tuple
-from collections import Counter
 from datetime import datetime, timedelta
+from typing import List, Tuple
 
-from app.models.user_behavior import UserBehavior, BehaviorType
+from sqlalchemy import func, desc
+from sqlalchemy.orm import Session, joinedload
+
 from app.models.character import Character
-from app.models.user import User
+from app.models.user_behavior import UserBehavior
 
 
 class CollaborativeRepository:

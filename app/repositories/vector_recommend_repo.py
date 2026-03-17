@@ -1,10 +1,11 @@
 # app/repositories/vector_recommend_repository.py
+from typing import List
+
 from sqlalchemy.orm import Session, joinedload
 
-from typing import List, Dict, Tuple
+from app.models.category import Category
 from app.models.character import Character
 from app.models.tag import Tag
-from app.models.category import Category
 from app.models.user_behavior import UserBehavior
 
 

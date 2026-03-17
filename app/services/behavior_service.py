@@ -1,7 +1,9 @@
 # app/services/behavior_service.py
-from sqlalchemy.orm import Session
-from app.models.user_behavior import UserBehavior
 from datetime import datetime
+
+from sqlalchemy.orm import Session
+
+from app.models.user_behavior import UserBehavior
 
 
 class BehaviorService:

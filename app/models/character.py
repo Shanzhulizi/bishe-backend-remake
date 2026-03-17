@@ -1,15 +1,8 @@
-from sqlalchemy import Column, BigInteger, String, Text, Boolean, TIMESTAMP, func, Integer, Float
-from sqlalchemy.orm import relationship
-
-from app.db.base import Base  # declarative_base
-
-
 from sqlalchemy import Column, BigInteger, String, Text, Boolean, Integer, Float, TIMESTAMP, Table, ForeignKey
 from sqlalchemy.orm import relationship
 from sqlalchemy.sql import func
 
-
-
+from app.db.base import Base  # declarative_base
 
 # 关联表
 character_categories = Table(

@@ -1,5 +1,7 @@
 from enum import Enum as PyEnum
+
 from sqlalchemy import Enum as SQLEnum
+
 
 class BehaviorType(str, PyEnum):
     VIEW = "view"
@@ -8,7 +10,7 @@ class BehaviorType(str, PyEnum):
 
 
 
-from sqlalchemy import Column, BigInteger, Integer, String, TIMESTAMP, ForeignKey, Index
+from sqlalchemy import Column, BigInteger, Integer, TIMESTAMP, ForeignKey
 from sqlalchemy.sql import func
 from sqlalchemy.orm import relationship
 from app.db.base import Base  # declarative_base

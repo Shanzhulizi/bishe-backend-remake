@@ -1,12 +1,13 @@
 # app/api/tag.py
+from typing import List
+
 from fastapi import APIRouter, Depends, Query, HTTPException
 from sqlalchemy.orm import Session
-from typing import List, Optional
 
 from app.api.deps import get_db
 from app.schemas.common import ResponseModel
-from app.services.tag_service import TagService
 from app.schemas.tag import TagCreate, TagUpdate, TagResponse
+from app.services.tag_service import TagService
 
 router = APIRouter()
 

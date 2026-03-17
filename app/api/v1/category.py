@@ -1,12 +1,13 @@
 # app/api/category.py
+from typing import List
+
 from fastapi import APIRouter, Depends, Query, HTTPException
 from sqlalchemy.orm import Session
-from typing import List, Optional
 
 from app.api.deps import get_db
+from app.schemas.category import CategoryCreate, CategoryUpdate, CategoryResponse
 from app.schemas.common import ResponseModel
 from app.services.category_service import CategoryService
-from app.schemas.category import CategoryCreate, CategoryUpdate, CategoryResponse
 
 router = APIRouter()
 

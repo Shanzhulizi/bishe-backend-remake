@@ -1,9 +1,7 @@
 from datetime import datetime
-from typing import Optional
 
-from sqlalchemy.orm import Session, joinedload
+from sqlalchemy.orm import Session
 
-from app.models.character import Character
 from app.models.character_usage import CharacterLike
 
 

@@ -3,8 +3,6 @@ from typing import Optional, List
 
 from pydantic import BaseModel, Field
 
-
-
 # 简化的类别信息（用于列表页）
 from app.schemas.category import CategoryResponse
 from app.schemas.tag import TagResponse

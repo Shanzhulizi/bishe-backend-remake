@@ -1,16 +1,7 @@
-import os
-import shutil
-import uuid
-
-from fastapi import APIRouter, Depends, UploadFile, File, Form
-from sqlalchemy.orm import Session
-
 from app.api.deps import get_db
 from app.core.logging import get_logger
-from app.schemas.character import CharacterCreate, CharacterDetailResponse
 
 from app.schemas.common import ResponseModel
-from app.services.character_service import CharacterService
 
 # router = APIRouter()
 # service = CharacterService(CharacterRepository())
@@ -115,7 +106,7 @@ AVATAR_DIR.mkdir(parents=True, exist_ok=True)
 
 
 # app/api/character.py
-from fastapi import APIRouter, Depends, Query, HTTPException, UploadFile, File, Form
+from fastapi import APIRouter, Depends, Query, UploadFile, File, Form
 from sqlalchemy.orm import Session
 from typing import List, Optional
 import json
@@ -233,11 +224,10 @@ async def create_character(
     char= service.create_character(data)
     return ResponseModel.success(data = char)
 
-import os
+
 import shutil
 import uuid
-from pathlib import Path
-from fastapi import UploadFile, File, Form, HTTPException
+from fastapi import Form, HTTPException
 from typing import Optional
 
 
@@ -305,13 +295,3 @@ def delete_character(
     service.delete_character(character_id)
     return ResponseModel.success(msg="角色已删除")
 
-
-# @router.post("/{character_id}/popularity")
-# def update_popularity(
-#         character_id: int,
-#         db: Session = Depends(get_db)
-# ):
-#     """更新角色热度分数"""
-#     service = CharacterService(db)
-#     service.update_popularity_score(character_id)
-#     return {"message": "热度更新成功"}

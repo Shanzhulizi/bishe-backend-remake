@@ -1,9 +1,10 @@
 # app/services/vector_preference_service.py
+import logging
+from typing import List, Dict, Tuple
+
 import numpy as np
 from sklearn.metrics.pairwise import cosine_similarity
 from sqlalchemy.orm import Session
-from typing import List, Dict, Tuple, Optional
-import logging
 
 from app.repositories.vector_recommend_repo import VectorRecommendRepository
 from app.schemas.character import CharacterListItem

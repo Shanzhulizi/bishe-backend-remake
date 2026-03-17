@@ -1,9 +1,6 @@
-from sqlalchemy import Column,DateTime, BigInteger, String, Text, Boolean, TIMESTAMP, func, Integer, Float
-from sqlalchemy.orm import relationship
+from sqlalchemy import Column, DateTime, String, func, Integer
 
 from app.db.base import Base  # declarative_base
-
-
 
 
 class Category(Base):

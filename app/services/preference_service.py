@@ -1,12 +1,12 @@
 # app/services/preference_service.py
-from sqlalchemy.orm import Session
-from typing import List
-from collections import Counter
 import logging
+from collections import Counter
+from typing import List
+
+from sqlalchemy.orm import Session
 
 from app.repositories.preference_repo import PreferenceRepository
 from app.repositories.recommend_repo import RecommendRepository
-
 from app.schemas.character import CharacterListItem
 
 logger = logging.getLogger(__name__)

@@ -1,32 +1,12 @@
-from fastapi import HTTPException
-from openai.types.beta.realtime import Session
-from starlette import status
-
 from app.core.logging import get_logger
-from app.persona.builder import PersonaBuilder
 from app.repositories.character_repo import CharacterRepository
-from app.schemas.character import CharacterCreate
-from sqlalchemy.orm import Session, joinedload
-from sqlalchemy import func, or_
-from fastapi import HTTPException
-from typing import List, Optional
-from datetime import datetime
-
-from app.models.character import Character, character_categories, character_tags
-from app.models.category import Category
-from app.models.tag import Tag
-from app.schemas.character import CharacterCreate, CharacterUpdate
 
 logger = get_logger(__name__)
-from sqlalchemy.orm import Session, joinedload
-from sqlalchemy import func, or_
+from sqlalchemy.orm import Session
 from fastapi import HTTPException
 from typing import List, Optional
-from datetime import datetime
 
-from app.models.character import Character, character_categories, character_tags
-from app.models.category import Category
-from app.models.tag import Tag
+from app.models.character import Character
 from app.schemas.character import CharacterCreate, CharacterUpdate
 
 

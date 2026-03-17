@@ -1,6 +1,6 @@
-from typing import List, Dict
+import random
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, Query
 from sqlalchemy.orm import Session
 
 from app.api.deps import get_db, get_current_user
@@ -8,54 +8,17 @@ from app.core.constants import ResponseCode
 from app.core.logging import get_logger
 from app.models.user import User
 from app.schemas.common import ResponseModel
-from app.services.collaborative_service import CollaborativeService
-from app.services.hot_recommend_service import HotRecommendService
-from app.services.preference_service import PreferenceService
-
-from app.services.recommend_service import RecommendService
-
-from fastapi import APIRouter, Depends, Query
-from sqlalchemy.orm import Session
-from typing import List, Optional
-from fastapi import APIRouter, Depends, Query
-from sqlalchemy.orm import Session
-from typing import List
-import random
-
-from app.api.deps import get_db, get_current_user
-from app.models.user import User
-from app.services.preference_service import PreferenceService
-from app.services.collaborative_service import CollaborativeService
-from app.services.recommend_service import RecommendService
 from app.schemas.recommend import RecommendResponse
-from app.schemas.character import CharacterListItem
+from app.services.collaborative_service import CollaborativeService
+
+from app.services.preference_service import PreferenceService
 from app.services.recommend_service import RecommendService
-from app.schemas.character import CharacterListItem
-from app.schemas.recommend import RecommendResponse
 from app.services.vector_preference_service import VectorPreferenceService
+
 
 router = APIRouter()
 logger = get_logger(__name__)
 
-
-
-
-@router.post("/refresh-hot-scores")
-async def refresh_hot_scores(
-        db: Session = Depends(get_db)
-) -> ResponseModel:
-    """
-    手动刷新热度得分（通常由定时任务自动执行）
-    """
-    try:
-        HotRecommendService.refresh_hot_scores(db)
-        return ResponseModel.success(msg="热度得分刷新成功")
-    except Exception as e:
-        logger.error(f"刷新热度得分失败: {e}")
-        return ResponseModel.error(
-            code=ResponseCode.INTERNAL_ERROR,
-            msg=f"刷新热度得分失败: {str(e)}"
-        )
 
 
 @router.get("/hot", response_model=RecommendResponse)

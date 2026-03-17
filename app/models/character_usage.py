@@ -7,9 +7,6 @@ from sqlalchemy import Column, Integer, ForeignKey, DateTime, UniqueConstraint
 from app.db.base import Base  # declarative_base
 
 
-
-
-
 class CharacterLike(Base):
     """角色点赞记录"""
     __tablename__ = "character_likes"

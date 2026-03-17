@@ -1,7 +1,8 @@
 # app/services/collaborative_service.py
-from sqlalchemy.orm import Session
-from typing import List
 import logging
+from typing import List
+
+from sqlalchemy.orm import Session
 
 from app.repositories.collaborative_repo import CollaborativeRepository
 from app.repositories.preference_repo import PreferenceRepository

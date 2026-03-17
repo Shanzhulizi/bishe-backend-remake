@@ -1,16 +1,10 @@
-from typing import List, Dict
-
-import edge_tts
 from fastapi import APIRouter, UploadFile, File, Form, HTTPException, Depends
-from starlette.responses import StreamingResponse
 
 from app.api.deps import get_current_user
-from app.core.config import settings
 from app.core.constants import ResponseCode
 from app.core.logging import get_logger
 from app.models.user import User
 from app.schemas.common import ResponseModel
-from app.schemas.cosyvoice import GenerateRequest
 from app.schemas.voice import CosyVoiceTTSRequest, CosyVoiceTTSResponse
 from app.services.cosyvoice2_service import cosyvoice2_service
 # from app.services.cosyvoice_service import cosyvoice_service

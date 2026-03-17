@@ -1,13 +1,12 @@
 # app/repositories/preference_repo.py
-from sqlalchemy import and_, func, desc
-from sqlalchemy.orm import Session, joinedload
-from typing import List, Dict, Tuple
-from collections import Counter
+from typing import List
 
-from app.models.user_behavior import UserBehavior, BehaviorType
-from app.models.character import Character
+from sqlalchemy.orm import Session, joinedload
+
 from app.models.category import Category
+from app.models.character import Character
 from app.models.tag import Tag
+from app.models.user_behavior import UserBehavior
 
 
 class PreferenceRepository:

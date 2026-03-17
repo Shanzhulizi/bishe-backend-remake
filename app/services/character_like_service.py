@@ -1,8 +1,5 @@
-from datetime import datetime, timedelta
-
 from sqlalchemy.orm import Session
 
-from app.models.character import Character
 from app.repositories.character_like_repo import CharacterLikeRepository
 from app.repositories.character_repo import CharacterRepository
 

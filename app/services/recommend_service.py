@@ -1,13 +1,11 @@
-# app/services/hot_recommend_service.py
 
-from datetime import datetime, timedelta
 from typing import List
+
+from sqlalchemy.orm import Session
 
 from app.core.logging import get_logger
 from app.models.character import Character
 from app.repositories.recommend_repo import RecommendRepository
-from sqlalchemy.orm import Session
-
 from app.schemas.character import CharacterListItem
 
 logger = get_logger(__name__)
