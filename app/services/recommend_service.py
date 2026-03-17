@@ -1,8 +1,10 @@
 # app/services/hot_recommend_service.py
 
 from datetime import datetime, timedelta
+from typing import List
 
 from app.core.logging import get_logger
+from app.models.character import Character
 from app.repositories.recommend_repo import RecommendRepository
 from sqlalchemy.orm import Session
 
@@ -41,7 +43,7 @@ class RecommendService:
         """
 
         characters = self.recommend_repo.get_popular_characters(limit, hours)
-
+        logger.info( f"Fetched popular characters: {[char.name for char in characters]} with limit {limit} and hours {hours}")
         return [CharacterListItem.model_validate(c) for c in characters]
 
 
@@ -59,8 +61,32 @@ class RecommendService:
             limit=limit, hours=hours, min_interaction = 100
 
         )
-        logger.info("Trends data: id,name,avatar,recent,previous")
-        logger.info(f"Trends data: {chars}")
+        logger.info(f"Fetched trending characters: {[char.name for char in chars]} with limit {limit} and hours {hours}")
 
 
         return chars
+
+
+
+    def get_hot_excluding(
+            self,
+            limit: int,
+            exclude_ids: List[int] = None,
+            days: int = 7
+    ) -> List[Character]:
+        """
+        获取热门角色，排除指定的ID
+        """
+        if exclude_ids is None:
+            exclude_ids = []
+
+        # 从数据库获取热门角色，直接排除已推荐的
+        hot_chars = self.recommend_repo.get_popular_characters(
+            limit=limit + len(exclude_ids),  # 多取一些，留出排除的空间
+            hours=days * 24
+        )
+
+        # 过滤掉排除的ID
+        filtered = [c for c in hot_chars if c.id not in exclude_ids]
+        logger.info(f"Fetched hot characters excluding IDs {exclude_ids}: {[char.name for char in filtered]} with limit {limit} and days {days}")
+        return filtered[:limit]

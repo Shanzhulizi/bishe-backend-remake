@@ -1,4 +1,4 @@
-# app/repositories/preference_repository.py
+# app/repositories/preference_repo.py
 from sqlalchemy import and_, func, desc
 from sqlalchemy.orm import Session, joinedload
 from typing import List, Dict, Tuple

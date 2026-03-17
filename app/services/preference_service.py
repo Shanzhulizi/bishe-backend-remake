@@ -4,7 +4,7 @@ from typing import List
 from collections import Counter
 import logging
 
-from app.repositories.preference_repository import PreferenceRepository
+from app.repositories.preference_repo import PreferenceRepository
 from app.repositories.recommend_repo import RecommendRepository
 
 from app.schemas.character import CharacterListItem
