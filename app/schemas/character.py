@@ -15,7 +15,7 @@ class CategoryInfo(BaseModel):
     name: str
 
     class Config:
-        orm_mode = True
+        from_attributes = True
 
 
 # 简化的标签信息（用于列表页）
@@ -24,7 +24,7 @@ class TagInfo(BaseModel):
     name: str
 
     class Config:
-        orm_mode = True
+        from_attributes = True
 
 
 class CharacterCreate(BaseModel):
@@ -94,9 +94,10 @@ class CharacterListItem(BaseModel):
     categories: List[CategoryInfo] = []
     tags: List[TagInfo] = []
     popularity_score: float
+    chat_count : int
 
     class Config:
-        orm_mode = True
+        from_attributes = True
 
 
 # 角色详情响应（完整版）
@@ -127,7 +128,7 @@ class CharacterDetailResponse(BaseModel):
     last_used_at: Optional[datetime] = None
 
     class Config:
-        orm_mode = True
+        from_attributes = True
 
 # 分页响应
 class PaginatedResponse(BaseModel):

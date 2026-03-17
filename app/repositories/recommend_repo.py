@@ -1,91 +1,144 @@
 # app/services/hot_recommend_service.py
+from datetime import timedelta, datetime
 from operator import and_, or_
+from typing import List, Optional
+from sqlalchemy import case
 
-from sqlalchemy import func
+from sqlalchemy import func, desc
+from sqlalchemy.orm import Session, joinedload
 
 from app.models.character import Character
-from app.models.character_usage import CharacterUsageLog
-from app.schemas.recommend import CharacterRecommendResponse
+from app.models.user_behavior import UserBehavior, BehaviorType
 
 
 class RecommendRepository:
+    def __init__(self, db: Session):
+        self.db = db
 
-    @classmethod
-    def get_popular_character(cls, db, limit):
-        result = db.query(
-            Character.id,
-            Character.name,
-            Character.avatar,
-            Character.description,
-            Character.popularity_score,
-            Character.like_count,
-            Character.usage_count,
-            Character.chat_count
+    def get_hot_character(self, limit):
+        result = self.db.query(Character).options(
+            joinedload(Character.categories),  # 预加载关联
+            joinedload(Character.tags)
         ).order_by(
             Character.popularity_score.desc()
-        ).limit(limit ).all()
+        ).limit(limit).all()
 
-        # 转换为 Pydantic 模型（自动处理序列化）
-        popular_characters = [
-            CharacterRecommendResponse(**row._asdict())
-            for row in result
-        ]
+        return result
 
-        return popular_characters
+    def get_popular_characters(self, limit: int, hours: int) -> List[Character]:
+        """
+        获取近期流行角色
+            这里选择的是根据各种行为的数量进行加权评分，近期行为越多的角色得分越高，从而排名靠前。
+        """
+        since = datetime.now() - timedelta(hours=hours)
 
-    @classmethod
-    def get_recent_usage(cls, db, recent_start):
-        recent_usage = db.query(
-            CharacterUsageLog.character_id,
-            func.count(CharacterUsageLog.id).label('count')
+        # 使用 CASE WHEN 给不同行为赋权重
+        recent_scores = self.db.query(
+            UserBehavior.character_id,
+            func.sum(
+                case(
+                    (UserBehavior.behavior_type == BehaviorType.LIKE, 3),
+                    (UserBehavior.behavior_type == BehaviorType.CHAT, 2),
+                    (UserBehavior.behavior_type == BehaviorType.VIEW, 1),
+                    else_=0
+                )
+            ).label('total_score')
         ).filter(
-            CharacterUsageLog.created_at >= recent_start
+            UserBehavior.created_at >= since
         ).group_by(
-            CharacterUsageLog.character_id
+            UserBehavior.character_id
         ).subquery()
 
-        return recent_usage
+        # 按总分排序
+        return self.db.query(Character).join(
+            recent_scores,
+            Character.id == recent_scores.c.character_id
+        ).options(
+            joinedload(Character.categories),
+            joinedload(Character.tags)
+        ).filter(
+            Character.is_active == True
+        ).order_by(
+            desc(recent_scores.c.total_score)
+        ).limit(limit).all()
 
-    @classmethod
-    def get_previous_usage(cls, db, previous_start, recent_start):
-        previous_usage = db.query(
-            CharacterUsageLog.character_id,
-            func.count(CharacterUsageLog.id).label('count')
+    def get_trending(self, limit: int, hours: int, min_interaction: int = 100
+                        # 这两个权重，我感觉没必要有这个
+                        # ,  growth_weight: float = 0.7,  volume_weight: float = 0.3
+                        ) -> List[dict]:
+        """
+        这里是近期飙升
+        利用角色增长率（用于计算飙升速度）
+                这里的增长率是基于用户行为数据计算的，比较当前周期和上一周期的行为数量，来判断哪些角色在近期热度增长最快。
+        """
+        now = datetime.now()
+        # 本期：最近 hours 小时 。current_start即为本期的开始时间
+        current_start = now - timedelta(hours=hours)
+        # 上期：再往前 hours 小时
+        previous_start = current_start - timedelta(hours=hours)
+
+        # 当前周期数据
+        current = self.db.query(
+            UserBehavior.character_id,
+            func.count(UserBehavior.id).label('current_count')
+        ).filter(
+            UserBehavior.created_at >= current_start
+        ).group_by(
+            UserBehavior.character_id
+        ).subquery()
+
+        # 上一周期数据
+        previous = self.db.query(
+            UserBehavior.character_id,
+            func.count(UserBehavior.id).label('previous_count')
         ).filter(
             and_(
-                CharacterUsageLog.created_at >= previous_start,
-                CharacterUsageLog.created_at < recent_start
+                UserBehavior.created_at >= previous_start,
+                UserBehavior.created_at < current_start
             )
         ).group_by(
-            CharacterUsageLog.character_id
+            UserBehavior.character_id
         ).subquery()
-        return previous_usage
 
-    @classmethod
-    def get_trends(cls, db, previous_start, recent_start):
-        # 近期使用量
-        recent_usage = cls.get_recent_usage(db, recent_start)
-
-        # 前期使用量
-        previous_usage = cls.get_previous_usage(db, previous_start, recent_start)
         # 计算增长率
-        trends = db.query(
-            Character.id,
-            Character.name,
-            Character.avatar,
-            func.coalesce(recent_usage.c.count, 0).label('recent'),
-            func.coalesce(previous_usage.c.count, 0).label('previous')
+        result = self.db.query(
+            Character,
+            func.coalesce(current.c.current_count, 0).label('current'),
+            func.coalesce(previous.c.previous_count, 0).label('previous')
         ).outerjoin(
-            recent_usage,
-            recent_usage.c.character_id == Character.id
+            current, Character.id == current.c.character_id
         ).outerjoin(
-            previous_usage,
-            previous_usage.c.character_id == Character.id
+            previous, Character.id == previous.c.character_id
         ).filter(
-            or_(
-                recent_usage.c.count > 0,
-                previous_usage.c.count > 0
-            )
+            Character.is_active == True
         ).all()
 
-        return trends
+        growth_data = []
+        for char, curr, prev in result:
+            # 过滤掉互动量太少的
+            if curr < min_interaction:
+                continue
+
+            if prev == 0:
+                # 上期为零，从无到有，给一个基础增长率
+                # 可以根据 curr 大小给不同权重
+                growth_rate = 100 + curr  # 基础值 + 当前量
+            else:
+                growth_rate = (curr - prev) / prev * 100  # 转为百分比
+
+            growth_data.append({
+                'character': char,
+                'current': curr,
+                'previous': prev,
+                'growth_rate': (growth_rate,2)
+            })
+
+        # 按增长率排序
+        growth_data.sort(key=lambda x: x['growth_rate'], reverse=True)
+        return growth_data[:limit]
+
+
+
+
+
+

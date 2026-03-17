@@ -3,7 +3,6 @@ from datetime import datetime, timedelta
 from sqlalchemy.orm import Session
 
 from app.models.character import Character
-from app.models.character_usage import CharacterUsageLog, CharacterLike
 from app.repositories.character_like_repo import CharacterLikeRepository
 from app.repositories.character_repo import CharacterRepository
 
