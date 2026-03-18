@@ -9,7 +9,9 @@ from app.repositories.preference_repo import PreferenceRepository
 from app.repositories.recommend_repo import RecommendRepository
 from app.schemas.character import CharacterListItem
 
-logger = logging.getLogger(__name__)
+from app.core.logging import get_logger
+
+logger = get_logger(__name__)
 
 
 class PreferenceService:

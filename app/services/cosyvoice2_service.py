@@ -9,10 +9,13 @@ import soundfile as sf
 import torch
 
 from app.core.config import Settings
+from app.core.logging import get_logger
 from app.repositories import voice_repo
 from app.repositories.voice_repo import VoiceRepository
 
-logger = logging.getLogger(__name__)
+
+logger = get_logger(__name__)
+
 settings = Settings()
 cosyvice_path = settings.COSYVOICE_PATH
 if cosyvice_path not in sys.path:

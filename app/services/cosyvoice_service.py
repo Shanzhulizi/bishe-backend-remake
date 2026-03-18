@@ -8,10 +8,13 @@ import soundfile as sf
 import torch
 
 from app.core.config import Settings
+
 from app.repositories import voice_repo
 from app.repositories.voice_repo import VoiceRepository
+from app.core.logging import get_logger
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
+
 settings = Settings()
 cosyvice_path = settings.COSYVOICE_PATH
 if cosyvice_path not in sys.path:
@@ -33,7 +36,9 @@ if torch.cuda.is_available():
     logger.info(f"✅ GPU: {torch.cuda.get_device_name(0)}")
     logger.info(f"   显存: {torch.cuda.get_device_properties(0).total_memory / 1024 ** 3:.1f} GB")
 
-logger = logging.getLogger(__name__)
+from app.core.logging import get_logger
+
+logger = get_logger(__name__)
 voice_repo = VoiceRepository()
 
 

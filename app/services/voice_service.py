@@ -9,7 +9,9 @@ from app.repositories.voice_repo import VoiceRepository
 
 settings = Settings()
 
-logger = logging.getLogger(__name__)
+from app.core.logging import get_logger
+
+logger = get_logger(__name__)
 voice_repo = VoiceRepository()
 
 

@@ -31,7 +31,7 @@ async def get_hot(
     """
     try:
         recommend_service = RecommendService(db)
-        recommendations = recommend_service.get_popular(
+        recommendations = recommend_service.get_hot(
 
             limit=limit
         )

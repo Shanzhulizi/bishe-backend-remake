@@ -1,20 +1,13 @@
 import asyncio
 
 from fastapi import APIRouter, Depends
-from fastapi import UploadFile, File, Form
 from fastapi.responses import StreamingResponse
 
 from app.api.deps import get_current_user
 from app.api.deps import get_db
 from app.core.logging import get_logger
-from app.schemas.chat import ChatRequest, ChatResponse
-from app.services.ars_service import ASRService
+from app.schemas.chat import ChatRequest
 from app.services.chat_service import ChatService
-from app.services.tts_service import TTSService
-
-# app/api/v1/tts.py
-# from app.models.voice import Voice
-
 
 router = APIRouter()
 
@@ -38,6 +31,9 @@ logger = get_logger(__name__)
 #     return {"reply": reply
 #             }
 
+
+# TODO 需要添加伦理审查，在审查发现有问题时，能在前端把生成的内容变为”不好意思，无法生成“
+# TODO 还需要添加情感分析，在生成回复之前就做，把情感加入提示词中，提升回复的质量
 @router.post("/stream")
 async def send_chat_stream(
         req: ChatRequest,

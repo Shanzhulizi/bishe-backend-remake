@@ -8,7 +8,9 @@ from app.services.popularity_service import PopularityService
 from app.models.character import Character
 from sqlalchemy import func
 
-logger = logging.getLogger(__name__)
+from app.core.logging import get_logger
+
+logger = get_logger(__name__)
 
 # 创建调度器
 scheduler = BackgroundScheduler()

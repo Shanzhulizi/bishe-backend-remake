@@ -8,7 +8,9 @@ import logging
 from app.models.character import Character
 from app.models.user_behavior import UserBehavior, BehaviorType
 
-logger = logging.getLogger(__name__)
+from app.core.logging import get_logger
+
+logger = get_logger(__name__)
 
 
 class PopularityService:

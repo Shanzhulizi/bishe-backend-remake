@@ -1,7 +1,8 @@
 from datetime import datetime
 from typing import Optional, Tuple, List
 
-from sqlalchemy import or_
+from sqlalchemy import or_, select
+from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import Session, joinedload
 
 from app.models.category import Category
@@ -19,6 +20,9 @@ class CharacterRepository:
         return self.db.query(Character).filter(
             Character.id == character_id
         ).first()
+
+
+
 
     def get_by_id_with_relations(self, character_id: int) -> Optional[Character]:
         """获取角色并加载关联的类别和标签"""

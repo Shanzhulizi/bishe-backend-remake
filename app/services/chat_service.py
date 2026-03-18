@@ -1,4 +1,5 @@
 import asyncio
+from concurrent.futures import ThreadPoolExecutor
 
 from fastapi import HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -18,9 +19,12 @@ logger = get_logger(__name__)
 class ChatService:
     def __init__(self, db: Session):
         self.db = db
+        self.executor = ThreadPoolExecutor(max_workers=4)
+
         self.character_repo = CharacterRepository(db)
         self.conversation_repo = ConversationRepository(db)
         self.message_repo = MessageRepository(db)
+
 
     # async def send_message(
     #         self,
@@ -182,15 +186,18 @@ class ChatService:
 
     async def send_message_stream(
             self,
-            db: AsyncSession,  # 改为 AsyncSession
+            db: Session,  # 改为 AsyncSession
             user_id: int,
             character_id: int,
             content: str,
     ):
+
+        loop = asyncio.get_event_loop()
+
         reply_buffer = ""
 
         # 1. 检查角色是否存在
-        character = await self.character_repo.get_by_id(character_id)
+        character = self.character_repo.get_by_id(character_id)
         if not character:
             raise HTTPException(status_code=404, detail="角色不存在")
 
@@ -218,7 +225,7 @@ class ChatService:
         ]
 
         # 6. 构建提示词
-        messages_for_llm = build_system_prompt(character, content, message_history)
+        messages_for_llm =await build_system_prompt(character, content, message_history)
 
         try:
             # 7. 流式生成回复
@@ -243,15 +250,37 @@ class ChatService:
             await self.conversation_repo.touch(conversation)
 
             # 9. 一次提交
-            await db.commit()
-
-            # 10. 记录统计（可以异步执行，不阻塞）
-            behavior_service = BehaviorService(self.db)
-            asyncio.create_task(
-                behavior_service.record_chat(user_id, character_id)
+            # self.db.commit()
+            await loop.run_in_executor(
+                None,  # 使用默认线程池
+                self.db.commit
             )
+            # 10. 记录统计（可以异步执行，不阻塞）
+            # behavior_service = BehaviorService(self.db)
+            # asyncio.create_task(
+            #     behavior_service.record_chat(user_id, character_id)
+            # )
+            behavior_service = BehaviorService(self.db)
+            try:
+                # 获取方法
+                record_method = behavior_service.record_chat
+                # 如果是同步方法，在线程池中执行
+                await loop.run_in_executor(
+                    None,  # 使用默认线程池
+                    record_method,
+                    user_id,
+                    character_id
+                )
 
+            except Exception as e:
+                logger.error(f"记录聊天统计失败: {e}")
+                # 不阻塞主流程
         except Exception as e:
-            await db.rollback()
+            # db.rollback()
+            # 回滚也需要在线程池中执行
+            await loop.run_in_executor(
+                None,
+                db.rollback
+            )
             logger.error(f"发送消息失败: {e}")
             raise

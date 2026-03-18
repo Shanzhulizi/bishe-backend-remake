@@ -9,7 +9,9 @@ from sqlalchemy.orm import Session
 from app.repositories.vector_recommend_repo import VectorRecommendRepository
 from app.schemas.character import CharacterListItem
 
-logger = logging.getLogger(__name__)
+from app.core.logging import get_logger
+
+logger = get_logger(__name__)
 
 
 class VectorPreferenceService:
