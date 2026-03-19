@@ -6,8 +6,7 @@ from sqlalchemy import (
     Boolean,
     Integer,
     ForeignKey,
-    TIMESTAMP,
-    func
+    TIMESTAMP
 )
 from sqlalchemy.orm import relationship
 
@@ -38,10 +37,7 @@ class Message(Base):
 
     emotion = Column(String(20))
 
-    created_at = Column(
-        TIMESTAMP(timezone=True),
-        server_default=func.now()
-    )
+    created_at = Column(TIMESTAMP(timezone=True))
 
     # ========== relationships ==========
     conversation = relationship(

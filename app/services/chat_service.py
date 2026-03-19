@@ -2,7 +2,6 @@ import asyncio
 from concurrent.futures import ThreadPoolExecutor
 
 from fastapi import HTTPException
-from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import Session
 
 from app.ai.client import chat_completion_stream
@@ -11,6 +10,7 @@ from app.core.logging import get_logger
 from app.repositories.character_repo import CharacterRepository
 from app.repositories.conversation_repo import ConversationRepository
 from app.repositories.message_repo import MessageRepository
+from app.schemas.page import PageParams
 from app.services.behavior_service import BehaviorService
 
 logger = get_logger(__name__)
@@ -24,7 +24,6 @@ class ChatService:
         self.character_repo = CharacterRepository(db)
         self.conversation_repo = ConversationRepository(db)
         self.message_repo = MessageRepository(db)
-
 
     # async def send_message(
     #         self,
@@ -178,7 +177,7 @@ class ChatService:
     #             self.db.commit()
     #
     #             # 为推荐算法记录对话数据
-    #             # TODO 为推荐算法记录对话数据
+    #             # 为推荐算法记录对话数据
     #             CharacterStatService.record_chat(self.db, character_id, user_id)
     #         except Exception as e:
     #             print(f"保存消息失败: {e}")
@@ -186,101 +185,106 @@ class ChatService:
 
     async def send_message_stream(
             self,
-            db: Session,  # 改为 AsyncSession
+            db: Session,
             user_id: int,
             character_id: int,
             content: str,
     ):
-
         loop = asyncio.get_event_loop()
-
         reply_buffer = ""
-
-        # 1. 检查角色是否存在
-        character = self.character_repo.get_by_id(character_id)
-        if not character:
-            raise HTTPException(status_code=404, detail="角色不存在")
-
-        # 2. 获取或创建会话
-        conversation = await self.conversation_repo.get_active(user_id, character_id)
-        if not conversation:
-            conversation = await self.conversation_repo.create(user_id, character_id)
-
-        # 3. 获取历史消息（按时间正序）
-        history_msgs = await self.message_repo.get_messages_by_conversation(
-            conversation.id,
-            order_by="asc"  # 明确指定顺序
-        )
-
-        # 4. 限制历史长度
-        recent_history = history_msgs[-20:] if len(history_msgs) > 20 else history_msgs
-
-        # 5. 构建消息历史
-        message_history = [
-            {
-                "role": "user" if msg.sender_type == "user" else "assistant",
-                "content": msg.content
-            }
-            for msg in recent_history
-        ]
-
-        # 6. 构建提示词
-        messages_for_llm =await build_system_prompt(character, content, message_history)
+        conversation = None
+        stream_success = False
 
         try:
-            # 7. 流式生成回复
-            async for token in chat_completion_stream(messages_for_llm):
-                reply_buffer += token
-                yield token
+            # 1. 检查角色
+            character = self.character_repo.get_by_id(character_id)
+            if not character:
+                raise HTTPException(status_code=404, detail="角色不存在")
 
-            # 8. 保存消息（统一提交）
-            await self.message_repo.create(
-                conversation_id=conversation.id,
-                sender_type="user",
-                content=content
+            # 2. 获取或创建会话
+            conversation = await self.conversation_repo.get_active(user_id, character_id)
+            if not conversation:
+                conversation = await self.conversation_repo.create(user_id, character_id)
+
+            # 3. 获取历史消息
+            recent_history = self.message_repo.get_messages_page(
+                conversation.id,
+                PageParams(page=1, page_size=10)
             )
+            logger.info(f"最近几条历史消息：{recent_history}")
 
-            await self.message_repo.create(
-                conversation_id=conversation.id,
-                sender_type="assistant",
-                content=reply_buffer,
-                token_count=-1
-            )
+            # 4. 构建消息历史
+            message_history = [
+                {
+                    "role": "user" if msg.sender_type == "user" else "assistant",
+                    "content": msg.content
+                }
+                for msg in recent_history
+            ]
 
-            await self.conversation_repo.touch(conversation)
+            # 5. 构建提示词
+            messages_for_llm = await build_system_prompt(character, content, message_history)
 
-            # 9. 一次提交
-            # self.db.commit()
-            await loop.run_in_executor(
-                None,  # 使用默认线程池
-                self.db.commit
-            )
-            # 10. 记录统计（可以异步执行，不阻塞）
-            # behavior_service = BehaviorService(self.db)
-            # asyncio.create_task(
-            #     behavior_service.record_chat(user_id, character_id)
-            # )
-            behavior_service = BehaviorService(self.db)
+            # 6. 流式生成回复 - 这部分可能失败
             try:
-                # 获取方法
-                record_method = behavior_service.record_chat
-                # 如果是同步方法，在线程池中执行
-                await loop.run_in_executor(
-                    None,  # 使用默认线程池
-                    record_method,
-                    user_id,
-                    character_id
+                async for token in chat_completion_stream(messages_for_llm):
+                    reply_buffer += token
+                    yield token
+                stream_success = True
+            except Exception as e:
+                logger.error(f"LLM流式生成失败: {e}")
+                # 生成错误信息给客户端
+                error_msg = f"\n\n[流式回复系统错误: {str(e)}]"
+                yield error_msg
+                # 这里不重新抛出异常，让流程继续但跳过保存
+                # 但需要确保回滚
+                await loop.run_in_executor(None, db.rollback)
+                return  # 直接返回，不执行后续保存
+
+            # 7. 只有在流式成功时才保存消息
+            if stream_success:
+                # 保存用户消息
+                await self.message_repo.create(
+                    conversation_id=conversation.id,
+                    sender_type="user",
+                    content=content,
+                    token_count=-1
                 )
 
-            except Exception as e:
-                logger.error(f"记录聊天统计失败: {e}")
-                # 不阻塞主流程
+                # 保存助手消息
+                await self.message_repo.create(
+                    conversation_id=conversation.id,
+                    sender_type="assistant",
+                    content=reply_buffer,
+                    token_count=-1
+                )
+
+                await self.conversation_repo.touch(conversation)
+
+                # 提交事务
+                await loop.run_in_executor(None, self.db.commit)
+                logger.info("消息保存成功")
+
+                # 记录统计
+                try:
+                    behavior_service = BehaviorService(self.db)
+                    await loop.run_in_executor(
+                        None,
+                        behavior_service.record_chat,
+                        user_id,
+                        character_id
+                    )
+                except Exception as e:
+                    logger.error(f"记录聊天统计失败: {e}")
+            else:
+                # 流式失败，确保回滚
+                await loop.run_in_executor(None, db.rollback)
+                logger.warning("流式生成失败，未保存任何消息")
+
         except Exception as e:
-            # db.rollback()
-            # 回滚也需要在线程池中执行
-            await loop.run_in_executor(
-                None,
-                db.rollback
-            )
             logger.error(f"发送消息失败: {e}")
+            # 确保回滚
+            if conversation:  # 只有有会话时才需要回滚
+                await loop.run_in_executor(None, db.rollback)
+            # 重新抛出，让上层处理
             raise

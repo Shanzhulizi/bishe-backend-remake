@@ -41,8 +41,11 @@ async def send_chat_stream(
         user=Depends(get_current_user)
 ):
     async def generator():
+        service = ChatService(db)
+        error_occurred = False
+        error_message = ""
         try:
-            service = ChatService(db)
+            # service = ChatService(db)
             async for token in service.send_message_stream(
                     db=db,
                     user_id=user.id,
@@ -54,11 +57,9 @@ async def send_chat_stream(
                 yield token
                 # 🔥 强制让出事件循环，确保数据被发送
                 await asyncio.sleep(0.0001)
-
+            logger.info("流式请求成功完成")
         except Exception as e:
-            print(f"流式生成器错误: {e}")
-            import traceback
-            traceback.print_exc()
+            logger.info(f"流式请求发生错误: {e}")
             yield f"\n\n[连接中断: {str(e)}]"
 
     return StreamingResponse(

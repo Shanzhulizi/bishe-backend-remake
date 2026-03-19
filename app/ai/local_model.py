@@ -114,7 +114,8 @@ async def local_model_chat_stream(messages: list):
                     yield token
 
     except Exception as e:
-        print(f"Ollama流式输出错误: {e}")
-        import traceback
-        traceback.print_exc()
-        yield f"【系统错误】{str(e)}"
+        logger.info(f"Ollama流式输出错误: {e}")
+        # import traceback
+        # traceback.print_exc()
+        # yield f"【系统错误】{str(e)}"
+        raise e

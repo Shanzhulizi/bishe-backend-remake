@@ -1,9 +1,11 @@
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, Query
 
 from app.api.deps import get_current_user, get_db
 from app.core.logging import get_logger
-from app.repositories.conversation_repo import ConversationRepository
-from app.repositories.message_repo import MessageRepository
+from app.schemas.message import MessagePageResponse
+from app.schemas.page import PageParams, Pagination
+from app.services.conversation_service import ConversationService
+from app.services.message_service import MessageService
 
 router = APIRouter()
 
@@ -18,15 +20,41 @@ logger = get_logger(__name__)
 
 
 @router.get("/history/{character_id}")
-async def get_history(character_id: int, db=Depends(get_db), user=Depends(get_current_user)):
-    message_repo = MessageRepository(db)
-    conversation_repo = ConversationRepository(db)
-    conversation = await conversation_repo.get_active(user.id, character_id)
-    if not conversation:
-        return {"messages": []}
+async def get_history(character_id: int,
+                      page: int = Query(1, ge=1),
+                      page_size: int = Query(20, ge=1, le=100),
+                      db=Depends(get_db), user=Depends(get_current_user)):
 
-    msgs = await message_repo.get_messages_by_conversation(conversation.id)
-    logger.info(f"获取历史消息数量 {len(msgs)}")
-    for m in msgs:
-        logger.info(f"消息 {m.id} 来自 {m.sender_type} 内容 {m.content}")
-    return {"messages": [{"id": m.id, "sender_type": m.sender_type, "content": m.content} for m in msgs]}
+    try:
+        conv_service = ConversationService(db)
+        message_service = MessageService(db)
+        conv = await conv_service.get_conv(user.id, character_id)
+        total = message_service.get_history_messages_count(conv.id)
+        logger.info(f"历史消息总数 {total}")
+        history = message_service.get_history_messages(conv.id, PageParams(page=page, page_size=page_size))
+        logger.info(f"获取历史消息数量 {len(history)}")
+        #  创建分页信息
+        pagination = Pagination.create(
+            page=page,
+            page_size=page_size,
+            total=total
+        )
+
+        # 5. 返回分页响应
+        return MessagePageResponse(
+            data=history,  # SQLAlchemy对象会自动转换为Message schema
+            pagination=pagination
+        )
+
+    except Exception as e:
+        logger.error(f"创建 ConversationService 失败: {e}")
+        return MessagePageResponse(
+            code=400,
+            message= "获取历史消息失败",
+            data=[],
+            pagination=Pagination.create(
+                page=page,
+                page_size=page_size,
+                total=0
+            )
+        )
