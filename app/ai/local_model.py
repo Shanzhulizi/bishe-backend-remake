@@ -119,3 +119,122 @@ async def local_model_chat_stream(messages: list):
         # traceback.print_exc()
         # yield f"【系统错误】{str(e)}"
         raise e
+
+
+
+async def local_model_check(text: str):
+    """
+    检测文本是否安全
+
+    Returns:
+        (是否安全, 问题类型, 建议的回复)
+    """
+    prompt = f"""你是内容安全审核员。判断以下内容是否安全：
+
+        内容：{text}
+
+        判断标准：
+        - 暴力：杀、打、伤害、自杀等
+        - 色情：性暗示、色情内容
+        - 仇恨：歧视、侮辱、攻击
+        - 违法：毒品、诈骗、赌博等
+        - 政治：敏感政治话题、反政府言论等
+        输出格式（严格遵守）：
+        安全：是/否
+        类型：如果违规，填写类型（暴力/色情/仇恨/违法/政治/其他）
+        建议回复：如果不安全，使用”请勿“开头给出简短的安全回复（一句话）
+
+        只输出这个格式，不要其他内容。
+
+        """
+
+    try:
+        response = ollama.chat(
+            model="qwen2.5:7b",
+            messages=[{"role": "user", "content": prompt}],
+            options={
+                "temperature": 0.1,
+                "num_predict": 80
+            }
+        )
+
+        result = response["message"]["content"]
+        return result
+
+    except Exception as e:
+        logger.error(f"伦理检测失败: {e}")
+        return True, "检测失败", None
+
+
+
+
+
+
+async def local_model_summary(history: list, history_summary: str = ""):
+
+    try:
+
+        # 1. 格式化消息列表
+        formatted_messages = []
+        for msg in history:
+            if msg.sender_type == "user":
+                role = "用户"
+            elif msg.sender_type == "assistant":
+                role = "助手"
+            else:
+                role = "系统"
+            formatted_messages.append(f"{role}: {msg.content}")
+
+        conversation_text = "\n".join(formatted_messages)
+
+        # 2. 构建提示词
+        if history_summary:
+            # 增量总结：结合已有摘要
+            prompt = f"""请根据以下已有的对话摘要和新对话内容，生成一份更新后的完整摘要。
+
+                    【已有摘要】
+                    {history_summary}
+            
+                    【新对话内容】
+                    {conversation_text}
+            
+                    【要求】
+                    1. 保持摘要简洁，突出重点信息
+                    2. 如果新对话是旧话题的延续，合并到对应话题中
+                    3. 如果出现新话题，添加到摘要中
+                    4. 摘要控制在200字以内
+            
+                    【更新后的摘要】
+                    """
+        else:
+            # 首次总结
+            prompt = f"""请总结以下对话的核心内容。
+
+                    【对话内容】
+                    {conversation_text}
+            
+                    【要求】
+                    1. 提取对话中的关键信息和主要话题
+                    2. 总结用户的核心诉求和助手的回应
+                    3. 摘要要简洁明了，控制在150字以内
+            
+                    【摘要】
+                    
+                    """
+
+        response = ollama.chat(
+            model="qwen2.5:7b",
+            messages=[{"role": "user", "content": prompt}],
+            options={
+                "temperature": 0.3,
+                "num_predict": 300
+            }
+        )
+
+        result = response["message"]["content"]
+        logger.info(f"对话历史生成摘要：{result}")
+        return result
+
+    except Exception as e:
+        logger.error(f"伦理检测失败: {e}")
+        return True, "检测失败", None

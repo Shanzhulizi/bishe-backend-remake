@@ -1,10 +1,11 @@
+from datetime import datetime
 from typing import Optional
 
 from sqlalchemy import select, func
-from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import Session
 
 from app.models.conversation import Conversation
+from app.models.user_behavior import UserBehavior
 
 
 class ConversationRepository:
@@ -54,3 +55,68 @@ class ConversationRepository:
         self.db.add(conv)
         self.db.flush()  # ✅ 只 flush，不 commit
         return conv
+
+    async def get_chat_count(self, user_id: int, character_id: int) -> int:
+        """获取用户与某个角色的聊天消息数量"""
+        stmt = select(func.count()).where(
+            UserBehavior.character_id == character_id,
+            UserBehavior.user_id == user_id,
+            UserBehavior.behavior_type == 'chat'
+        )
+
+        result = self.db.execute(stmt)
+        count = result.scalar()
+
+        return count or 0
+
+    def get_summary(self, user_id, character_id):
+        # 先找到会话
+        stmt_conversation = select(Conversation.id).where(
+            Conversation.user_id == user_id,
+            Conversation.character_id == character_id
+        )
+        result = self.db.execute(stmt_conversation)
+        conversation = result.scalar_one_or_none()
+
+        if not conversation:
+            return None
+        result = self.db.query(Conversation.summary).filter(
+            Conversation.id == conversation.id
+        ).first()
+
+        return result[0] if result else None
+    def get_summary_count(self, conversation_id):
+        result = self.db.query(Conversation.summary_count).filter(
+            Conversation.id == conversation_id
+        ).first()
+        return result[0] if result and result[0] else 0
+
+
+    def save_summary(
+            self,
+            conversation_id: int,
+            summary: str,
+            summarized_count: int
+    ) -> bool:
+        """
+        保存摘要
+        """
+        try:
+            conversation = self.db.query(Conversation).filter(
+                Conversation.id == conversation_id,
+            ).first()
+
+            if conversation:
+                conversation.summary = summary
+                conversation.summarized_count = summarized_count
+                conversation.summary_updated_at = datetime.now()
+                self.db.commit()
+
+                return True
+            else:
+
+                return False
+        except Exception as e:
+            # logger.error(f"保存摘要失败: {e}")
+            self.db.rollback()
+            return False

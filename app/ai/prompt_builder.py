@@ -4,13 +4,19 @@ from app.core.logging import get_logger
 from app.services.emotion_service import emotion_service
 
 logger = get_logger(__name__)
-async def build_system_prompt(character, content: str, history: List[Dict] = None) -> List[Dict]:
+
+
+
+async def build_system_prompt(character, content: str, history: List[Dict] = None, history_summary: str = None) -> List[
+    Dict]:
     # 情感分析逻辑
 
     # emotion_result = await emotion_service.analyze_use_api(content)
     emotion_result = await emotion_service.analyze_use_model(content)
 
-    logger.info(f"情感分析结果: {emotion_result['emotion']} (置信度: {emotion_result['score']:.2f})，建议回应语气: {emotion_result['tone']}"    )
+    logger.info(
+        f"情感分析结果: {emotion_result['emotion']} (置信度: {emotion_result['score']:.2f})，建议回应语气: {emotion_result['tone']}")
+
     system_msg = f"""现在你正在扮演一个角色来服务用户，请完全沉浸在这个角色中。注意要与用户区分你我。
 
     角色名称：{character.name}，
@@ -22,9 +28,10 @@ async def build_system_prompt(character, content: str, history: List[Dict] = Non
     3. 在用户提及名字、喜好等信息时，要记住并在后续对话中使用
     4. 回复要自然流畅，不要重复同样的话
     5. 不要提及你是AI或助手
-    6. 用户如果提及违背法律、伦理的内容，请礼貌地拒绝并引导回正常话题
+    6. 用户如果提及违背法律、伦理、涉政的内容，请礼貌地拒绝并引导回正常话题
     
-    
+    【久远历史对话总结】
+    {history_summary if history_summary else "无"}
     
     
     【当前用户状态】
@@ -42,3 +49,7 @@ async def build_system_prompt(character, content: str, history: List[Dict] = Non
     messages.append({"role": "user", "content": f"{content}"})
 
     return messages
+
+
+
+

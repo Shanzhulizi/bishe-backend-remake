@@ -13,6 +13,8 @@ from app.repositories.message_repo import MessageRepository
 from app.schemas.page import PageParams
 from app.services.behavior_service import BehaviorService
 from app.services.character_service import CharacterService
+from app.services.conversation_service import ConversationService
+from app.services.ethics_service import EthicsService
 
 logger = get_logger(__name__)
 
@@ -25,7 +27,10 @@ class ChatService:
         self.character_repo = CharacterRepository(db)
         self.conversation_repo = ConversationRepository(db)
         self.message_repo = MessageRepository(db)
+        # 3b模型会造成误判，如：我想把欺负我的人捅死，3b会返回is_safe=True
+        self.ethics_service = EthicsService("qwen2.5:7b")
 
+        self.conversation_service = ConversationService(db)
     # async def send_message(
     #         self,
     #         db: Session,
@@ -207,6 +212,18 @@ class ChatService:
             if not conversation:
                 conversation = await self.conversation_repo.create(user_id, character_id)
 
+            #  这里应该搞吗？这里搞了那提示词不就没用了吗？
+            # 2.5 检测用户内容是否违规
+            # user_input_check_result = await self.ethics_service.check(content)
+            # # result 是一个元组 (is_safe, issue_type, safe_response)
+            # is_safe = user_input_check_result[0]
+            # issue_type = user_input_check_result[1]
+            # safe_response = user_input_check_result[2]
+            # if not is_safe:
+            #     # 用户输入违规，返回建议回复
+            #     yield safe_response
+            #     return
+
             # 3. 获取历史消息
             recent_history = self.message_repo.get_messages_page(
                 conversation.id,
@@ -222,16 +239,35 @@ class ChatService:
                 }
                 for msg in recent_history
             ]
+            # 4.5 构建历史消息摘要
+            # 获取用户与该角色的对话次数，如果对话次数较多，将历史对话内容输入到大模型中，生成精炼的历史记录摘要
+            # 该操作的条件为对话次数超过50次，之后每增加40次对话就更新一次历史记录摘要
+            # 历史记录摘要和历史消息不重复，历史记录摘要是对久远的历史消息的总结，而历史消息是近期20条的对话内容
 
+
+            history_summary = await  self.conversation_service.build_history_summary(conversation.id,  user_id,character_id)
+            logger.info(f"历史记录摘要：{history_summary}")
             # 5. 构建提示词
-            messages_for_llm = await build_system_prompt(character, content, message_history)
+            messages_for_llm = await build_system_prompt(character, content, message_history, history_summary)
 
             # 6. 流式生成回复 - 这部分可能失败
+
             try:
                 async for token in chat_completion_stream(messages_for_llm):
                     reply_buffer += token
                     yield token
+
+                # 6.5 检测生成内容是否违规,在生成完成后检测
+                is_safe, issue_type, _ = await self.ethics_service.check(reply_buffer)
+
+                if not is_safe:
+                    logger.warning(f"AI回复违规: {issue_type}")
+                    # 发送一个特殊标记，让前端替换内容
+                    yield "\n\n[REPLACE_LAST]抱歉，我无法回答这个问题。"
+                    reply_buffer = "抱歉，我无法回答这个问题。"
+
                 stream_success = True
+
             except Exception as e:
                 logger.error(f"LLM流式生成失败: {e}")
                 # 生成错误信息给客户端
@@ -288,13 +324,12 @@ class ChatService:
                         character_id
                     )
 
-
                     # 统一提交
                     await loop.run_in_executor(None, self.db.commit)
                     logger.info("聊天统计记录成功")
 
                 except Exception as e:
-                # 出错时统一回滚
+                    # 出错时统一回滚
                     await loop.run_in_executor(None, self.db.rollback)
                     logger.error(f"记录聊天统计失败: {e}")
             else:

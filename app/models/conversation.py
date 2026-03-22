@@ -28,7 +28,7 @@ class Conversation(Base):
 
     # 长对话摘要（上下文压缩用）
     summary = Column(Text)
-
+    summary_count = Column(BigInteger, default=0)
     last_message_at = Column(TIMESTAMP(timezone=True))
 
     created_at = Column(
