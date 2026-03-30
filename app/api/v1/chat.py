@@ -101,9 +101,8 @@ async def send_chat_stream(
 #     }
 #
 
-# TODO 语音通话功能还未测试
-# TODO 语音通话的前端还没做
-# TODO deepseek说可以用websocket，不知道怎么做
+
+
 @router.post("/voice_chat")
 async def voice_chat(
         character_id: int = Form(...),
