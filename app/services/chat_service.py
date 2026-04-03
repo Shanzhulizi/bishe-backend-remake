@@ -63,7 +63,7 @@ class ChatService:
 
             # ✅ 可以并行执行（它们之间没有依赖关系）
             recent_history, history_summary = await asyncio.gather(
-                self.message_repo.get_messages_page(conversation.id, PageParams(page=1, page_size=10)),
+                self.message_repo.get_messages_page(conversation.id, PageParams(page=1, page_size=20)),
                 self.conversation_service.get_history_summary(conversation.id, user_id, character_id)
             )
 
