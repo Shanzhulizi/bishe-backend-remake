@@ -1,10 +1,14 @@
 import asyncio
+from asyncio import Semaphore
 from concurrent.futures import ThreadPoolExecutor
+from typing import AsyncGenerator
 
 from fastapi import HTTPException
+from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import Session
 
 from app.ai.client import chat_completion_stream
+from app.ai.deepseek import deepseek_chat_stream
 from app.ai.prompt_builder import build_system_prompt
 from app.core.logging import get_logger
 from app.repositories.character_repo import CharacterRepository
@@ -14,13 +18,15 @@ from app.schemas.page import PageParams
 from app.services.behavior_service import BehaviorService
 from app.services.character_service import CharacterService
 from app.services.conversation_service import ConversationService
-from app.services.ethics_service import EthicsService
+from app.services.ethics_service import EthicsService, ethics_service
 
 logger = get_logger(__name__)
 
 
 class ChatService:
-    def __init__(self, db: Session):
+    _llm_semaphore = Semaphore(2)
+
+    def __init__(self, db: AsyncSession):
         self.db = db
         self.executor = ThreadPoolExecutor(max_workers=4)
 
@@ -28,104 +34,25 @@ class ChatService:
         self.conversation_repo = ConversationRepository(db)
         self.message_repo = MessageRepository(db)
         # 3b模型会造成误判，如：我想把欺负我的人捅死，3b会返回is_safe=True
-        self.ethics_service = EthicsService("qwen2.5:7b")
-
+        # self.ethics_service = EthicsService("qwen2.5:3b")
         self.conversation_service = ConversationService(db)
-    # async def send_message(
-    #         self,
-    #         db: Session,
-    #         user_id: int,
-    #         character_id: int,
-    #         content: str,
-    #
-    # ) -> str:
-    #     logger.info(f"消息：{content}")
-    #     try:
-    #         # 获取或创建会话
-    #         conversation = await    self.conversation_repo.get_active(
-    #             db, user_id, character_id
-    #         )
-    #         if not conversation:
-    #             conversation = await    self.conversation_repo.create(
-    #                 db, user_id, character_id
-    #             )
-    #
-    #         # 准备消息历史记录（最近 N 条）
-    #         history_msgs = await  self.message_repo.get_messages_by_conversation(
-    #             db, conversation.id
-    #         )
-    #         logger.info(f"完整历史消息：{history_msgs}")
-    #         # 限制历史长度
-    #         max_history = 10
-    #         # 这句话的作用是 裁剪历史消息的长度，保证传给 LLM 的上下文不会太长
-    #         recent_history = history_msgs[-max_history:] if len(history_msgs) > max_history else history_msgs
-    #
-    #         logger.info(f"切割后的历史消息：{recent_history}")
-    #         message_history = [
-    #             {
-    #                 "role": "user" if msg.sender_type == "user" else "assistant",
-    #                 "content": msg.content
-    #             }
-    #             for msg in recent_history
-    #         ]
-    #
-    #         # 4️⃣ 构建 system prompt + 历史
-    #         character = self.character_repo.get_by_id(character_id)
-    #         messages_for_llm = build_system_prompt(character, content, message_history)
-    #         logger.info(f"Messages for LLM: {messages_for_llm}")
-    #         # 4️⃣ 调用 LLM
-    #         llm_resp = await chat_completion(messages_for_llm)
-    #
-    #         reply = llm_resp.reply
-    #         token_count = llm_resp.usage.total_tokens
-    #
-    #         # 到这里才开始真正写库（事务安全）
-    #         # 存储用户消息
-    #         await  self.message_repo.create(
-    #             db,
-    #             conversation_id=conversation.id,
-    #             sender_type="user",
-    #             content=content
-    #         )
-    #         # 存储助手回复
-    #         assistant_message = await  self.message_repo.create(
-    #             db,
-    #             conversation_id=conversation.id,
-    #             sender_type="assistant",
-    #             content=reply,
-    #             token_count=token_count
-    #         )
-    #
-    #         # 更新会话的最后消息时间
-    #         await  self.conversation_repo.touch(db, conversation)
-    #
-    #         db.commit()
-    #         return reply
-    #
-    #     except Exception as e:
-    #         db.rollback()
-    #         # 记录日志（非常重要）
-    #         logger.exception("send_message failed", exc_info=e)
-    #         raise
-
-
-
 
     async def send_message_stream(
             self,
-            db: Session,
             user_id: int,
             character_id: int,
             content: str,
-    ):
+    ) -> AsyncGenerator[str, None]:
         loop = asyncio.get_event_loop()
         reply_buffer = ""
         conversation = None
         stream_success = False
 
         try:
+
+
             # 1. 检查角色
-            character = self.character_repo.get_by_id(character_id)
+            character = await self.character_repo.get_by_id(character_id)
             if not character:
                 raise HTTPException(status_code=404, detail="角色不存在")
 
@@ -133,6 +60,13 @@ class ChatService:
             conversation = await self.conversation_repo.get_active(user_id, character_id)
             if not conversation:
                 conversation = await self.conversation_repo.create(user_id, character_id)
+
+            # ✅ 可以并行执行（它们之间没有依赖关系）
+            recent_history, history_summary = await asyncio.gather(
+                self.message_repo.get_messages_page(conversation.id, PageParams(page=1, page_size=10)),
+                self.conversation_service.get_history_summary(conversation.id, user_id, character_id)
+            )
+
 
             #  这里应该搞吗？这里搞了那提示词不就没用了吗？
             # 2.5 检测用户内容是否违规
@@ -147,10 +81,10 @@ class ChatService:
             #     return
 
             # 3. 获取历史消息
-            recent_history = self.message_repo.get_messages_page(
-                conversation.id,
-                PageParams(page=1, page_size=10)
-            )
+            # recent_history = await self.message_repo.get_messages_page(
+            #     conversation.id,
+            #     PageParams(page=1, page_size=10)
+            # )
             logger.info(f"最近几条历史消息：{recent_history}")
 
             # 4. 构建消息历史
@@ -166,21 +100,29 @@ class ChatService:
             # 该操作的条件为对话次数超过50次，之后每增加40次对话就更新一次历史记录摘要
             # 历史记录摘要和历史消息不重复，历史记录摘要是对久远的历史消息的总结，而历史消息是近期20条的对话内容
 
-
-            history_summary = await  self.conversation_service.build_history_summary(conversation.id,  user_id,character_id)
+            # history_summary = await  self.conversation_service.get_history_summary(conversation.id, user_id,  character_id)
             logger.info(f"历史记录摘要：{history_summary}")
             # 5. 构建提示词
             messages_for_llm = await build_system_prompt(character, content, message_history, history_summary)
-
+            logger.info(f"content: {content}")
             # 6. 流式生成回复 - 这部分可能失败
 
             try:
                 async for token in chat_completion_stream(messages_for_llm):
                     reply_buffer += token
                     yield token
-
+                # =====================
+                # async with self.__class__._llm_semaphore:
+                #     async for token in chat_completion_stream(messages_for_llm):
+                #         reply_buffer += token
+                #         yield token
+                #         =================
+                # async for token in deepseek_chat_stream(messages_for_llm):
+                #     reply_buffer += token
+                #     yield token
+                logger.info(f"LLM流式生成完成，回复内容：{reply_buffer}")
                 # 6.5 检测生成内容是否违规,在生成完成后检测
-                is_safe, issue_type, _ = await self.ethics_service.check(reply_buffer)
+                is_safe, issue_type, _ = await ethics_service.check(reply_buffer)
 
                 if not is_safe:
                     logger.warning(f"AI回复违规: {issue_type}")
@@ -189,7 +131,12 @@ class ChatService:
                     reply_buffer = "抱歉，我无法回答这个问题。"
 
                 stream_success = True
-
+                # ✅ 流式完成后，触发异步摘要更新
+                asyncio.create_task(
+                    self.conversation_service.check_and_update_summary(
+                        conversation.id, user_id, character_id
+                    )
+                )
             except Exception as e:
                 logger.error(f"LLM流式生成失败: {e}")
                 # 生成错误信息给客户端
@@ -197,7 +144,7 @@ class ChatService:
                 yield error_msg
                 # 这里不重新抛出异常，让流程继续但跳过保存
                 # 但需要确保回滚
-                await loop.run_in_executor(None, db.rollback)
+                await self.db.rollback()
                 return  # 直接返回，不执行后续保存
 
             # 7. 只有在流式成功时才保存消息
@@ -221,48 +168,37 @@ class ChatService:
                 await self.conversation_repo.touch(conversation)
 
                 # 提交事务
-                await loop.run_in_executor(None, self.db.commit)
+                await self.db.commit()
                 logger.info("消息保存成功")
 
                 # 记录统计
                 try:
                     behavior_service = BehaviorService(self.db)
-                    await loop.run_in_executor(
-                        None,
-                        behavior_service.record_chat,
-                        user_id,
-                        character_id
-                    )
+                    await behavior_service.record_chat(user_id, character_id)
 
                     character_service = CharacterService(self.db)
-                    await loop.run_in_executor(
-                        None,
-                        character_service.increment_chat_count,
-                        character_id
-                    )
-                    await loop.run_in_executor(
-                        None,
-                        character_service.update_use_time,
-                        character_id
-                    )
+                    await character_service.increment_chat_count(character_id)
+                    await character_service.update_use_time(character_id)
 
-                    # 统一提交
-                    await loop.run_in_executor(None, self.db.commit)
+                    await self.db.commit()
                     logger.info("聊天统计记录成功")
 
                 except Exception as e:
                     # 出错时统一回滚
-                    await loop.run_in_executor(None, self.db.rollback)
+
+                    await self.db.rollback()
                     logger.error(f"记录聊天统计失败: {e}")
             else:
                 # 流式失败，确保回滚
-                await loop.run_in_executor(None, db.rollback)
+
+                await self.db.rollback()
                 logger.warning("流式生成失败，未保存任何消息")
 
         except Exception as e:
             logger.error(f"发送消息失败: {e}")
             # 确保回滚
             if conversation:  # 只有有会话时才需要回滚
-                await loop.run_in_executor(None, db.rollback)
+
+                await self.db.rollback()
             # 重新抛出，让上层处理
             raise

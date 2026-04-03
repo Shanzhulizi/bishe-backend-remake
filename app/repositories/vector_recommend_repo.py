@@ -1,7 +1,11 @@
 # app/repositories/vector_recommend_repository.py
+
+from datetime import datetime, timedelta
 from typing import List
 
-from sqlalchemy.orm import Session, joinedload
+from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import selectinload
 
 from app.models.category import Category
 from app.models.character import Character
@@ -12,47 +16,56 @@ from app.models.user_behavior import UserBehavior
 class VectorRecommendRepository:
     """向量推荐数据仓库"""
 
-    def __init__(self, db: Session):
+    def __init__(self, db: AsyncSession):
         self.db = db
 
-    def get_all_tags(self) -> List[Tag]:
+    async def get_all_tags(self) -> List[Tag]:
         """获取所有标签"""
-        return self.db.query(Tag).order_by(Tag.id).all()
+        stmt = select(Tag).order_by(Tag.id)
+        result = await self.db.execute(stmt)
+        return result.scalars().all()
 
-    def get_all_categories(self) -> List[Category]:
+    async def get_all_categories(self) -> List[Category]:
         """获取所有类别"""
-        return self.db.query(Category).order_by(Category.id).all()
 
-    def get_user_behaviors(self, user_id: int, days: int) -> List[UserBehavior]:
+        stmt = select(Category).order_by(Category.id)
+        result = await self.db.execute(stmt)
+        return result.scalars().all()
+
+    async def get_user_behaviors(self, user_id: int, days: int) -> List[UserBehavior]:
         """获取用户行为"""
-        from datetime import datetime, timedelta
         since = datetime.now() - timedelta(days=days)
 
-        return self.db.query(UserBehavior).filter(
+        stmt = select(UserBehavior).where(
             UserBehavior.user_id == user_id,
             UserBehavior.created_at >= since
         ).options(
-            joinedload(UserBehavior.character)
-                .joinedload(Character.categories),
-            joinedload(UserBehavior.character)
-                .joinedload(Character.tags)
-        ).all()
+            selectinload(UserBehavior.character)
+                .selectinload(Character.categories),
+            selectinload(UserBehavior.character)
+                .selectinload(Character.tags)
+        ).order_by(UserBehavior.created_at.desc())
 
-    def get_all_active_characters(self) -> List[Character]:
+        result = await self.db.execute(stmt)
+        return result.scalars().all()
+
+    async def get_all_active_characters(self) -> List[Character]:
         """获取所有活跃角色"""
-        return self.db.query(Character).filter(
+        stmt = select(Character).where(
             Character.is_active == True
         ).options(
-            joinedload(Character.categories),
-            joinedload(Character.tags)
-        ).all()
+            selectinload(Character.categories),
+            selectinload(Character.tags)
+        )
 
-    def get_user_interacted_ids(self, user_id: int) -> List[int]:
+        result = await self.db.execute(stmt)
+        return result.scalars().all()
+
+    async def get_user_interacted_ids(self, user_id: int) -> List[int]:
         """获取用户互动过的角色ID"""
-        results = self.db.query(
-            UserBehavior.character_id
-        ).filter(
+        stmt = select(UserBehavior.character_id).where(
             UserBehavior.user_id == user_id
-        ).distinct().all()
+        ).distinct()
 
-        return [r[0] for r in results]
+        result = await self.db.execute(stmt)
+        return [row[0] for row in result.all()]

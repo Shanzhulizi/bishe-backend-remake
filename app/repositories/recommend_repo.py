@@ -3,37 +3,39 @@ from datetime import timedelta, datetime
 from operator import and_
 from typing import List
 
-from sqlalchemy import case
-from sqlalchemy import func, desc
-from sqlalchemy.orm import Session, joinedload
+from sqlalchemy import select, func, and_, desc, case
+from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import selectinload
 
 from app.models.character import Character
 from app.models.user_behavior import UserBehavior, BehaviorType
 
 
 class RecommendRepository:
-    def __init__(self, db: Session):
+    def __init__(self, db: AsyncSession):
         self.db = db
 
-    def get_hot_character(self, limit):
-        result = self.db.query(Character).options(
-            joinedload(Character.categories),  # 预加载关联
-            joinedload(Character.tags)
+    async def get_hot_character(self, limit):
+        stmt = select(Character).options(
+            selectinload(Character.categories),
+            selectinload(Character.tags)
         ).order_by(
             Character.popularity_score.desc()
-        ).limit(limit).all()
+        ).limit(limit)
 
-        return result
+        result = await self.db.execute(stmt)
+        return result.scalars().all()
 
-    def get_popular_characters(self, limit: int, hours: int) -> List[Character]:
+    async def get_popular_characters(self, limit: int, hours: int) -> List[Character]:
         """
         获取近期流行角色
             这里选择的是根据各种行为的数量进行加权评分，近期行为越多的角色得分越高，从而排名靠前。
         """
         since = datetime.now() - timedelta(hours=hours)
 
-        # 使用 CASE WHEN 给不同行为赋权重
-        recent_scores = self.db.query(
+
+        # 子查询：计算近期行为分数
+        recent_scores = select(
             UserBehavior.character_id,
             func.sum(
                 case(
@@ -43,26 +45,30 @@ class RecommendRepository:
                     else_=0
                 )
             ).label('total_score')
-        ).filter(
+        ).where(
             UserBehavior.created_at >= since
         ).group_by(
             UserBehavior.character_id
         ).subquery()
 
         # 按总分排序
-        return self.db.query(Character).join(
+
+        stmt = select(Character).join(
             recent_scores,
             Character.id == recent_scores.c.character_id
         ).options(
-            joinedload(Character.categories),
-            joinedload(Character.tags)
-        ).filter(
+            selectinload(Character.categories),
+            selectinload(Character.tags)
+        ).where(
             Character.is_active == True
         ).order_by(
             desc(recent_scores.c.total_score)
-        ).limit(limit).all()
+        ).limit(limit)
 
-    def get_trending(self, limit: int, hours: int, min_interaction: int = 100
+        result = await self.db.execute(stmt)
+        return result.scalars().all()
+
+    async def get_trending(self, limit: int, hours: int, min_interaction: int = 100
                         # 这两个权重，我感觉没必要有这个
                         # ,  growth_weight: float = 0.7,  volume_weight: float = 0.3
                         ) -> List[dict]:
@@ -78,20 +84,20 @@ class RecommendRepository:
         previous_start = current_start - timedelta(hours=hours)
 
         # 当前周期数据
-        current = self.db.query(
+        current = select(
             UserBehavior.character_id,
             func.count(UserBehavior.id).label('current_count')
-        ).filter(
+        ).where(
             UserBehavior.created_at >= current_start
         ).group_by(
             UserBehavior.character_id
         ).subquery()
 
         # 上一周期数据
-        previous = self.db.query(
+        previous = select(
             UserBehavior.character_id,
             func.count(UserBehavior.id).label('previous_count')
-        ).filter(
+        ).where(
             and_(
                 UserBehavior.created_at >= previous_start,
                 UserBehavior.created_at < current_start
@@ -101,7 +107,7 @@ class RecommendRepository:
         ).subquery()
 
         # 计算增长率
-        result = self.db.query(
+        stmt = select(
             Character,
             func.coalesce(current.c.current_count, 0).label('current'),
             func.coalesce(previous.c.previous_count, 0).label('previous')
@@ -109,12 +115,15 @@ class RecommendRepository:
             current, Character.id == current.c.character_id
         ).outerjoin(
             previous, Character.id == previous.c.character_id
-        ).filter(
+        ).where(
             Character.is_active == True
-        ).all()
+        )
+
+        result = await self.db.execute(stmt)
+        rows = result.all()
 
         growth_data = []
-        for char, curr, prev in result:
+        for char, curr, prev in rows:
             # 过滤掉互动量太少的
             if curr < min_interaction:
                 continue
@@ -130,7 +139,7 @@ class RecommendRepository:
                 'character': char,
                 'current': curr,
                 'previous': prev,
-                'growth_rate': (growth_rate,2)
+                'growth_rate': round(growth_rate,2)
             })
 
         # 按增长率排序

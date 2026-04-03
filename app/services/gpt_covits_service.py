@@ -1,3 +1,4 @@
+import asyncio
 import hashlib
 import os
 import sys
@@ -62,7 +63,7 @@ class GptCovitsService:
 
     def __init__(self, db):
         self.db = db
-        self.voice_repo = VoiceRepository()
+        self.voice_repo = VoiceRepository(db)
         self._initialize_model()
 
     @classmethod
@@ -152,7 +153,7 @@ class GptCovitsService:
             traceback.print_exc()
             raise
 
-    def generate_voice(self, text: str, voice_id: str) -> str:
+    async def generate_voice(self, text: str, voice_id: str) -> str:
         # 确保模型已初始化
         if not self.__class__._model_initialized:
             self._initialize_model()
@@ -168,7 +169,7 @@ class GptCovitsService:
             return audio_url
 
         # 获取参考音频
-        voice = self.voice_repo.get_voice_by_id(voice_id)
+        voice =await self.voice_repo.get_voice_by_id(voice_id)
         prompt_text = voice.voice_text
         BASE_DIR = Path(__file__).resolve().parent.parent.parent
         voice_path = '/static' + voice.voice_url.split('/static')[1]
@@ -179,13 +180,25 @@ class GptCovitsService:
         # output_path = rf"E:\Code\Python\AIChat\static\gpt-covits\output\{cache_key}.wav"
         output_path = settings.GPT_SoVITS_OUTPUT_DIR / f"{cache_key}.wav"
 
-        result = self._clone_voice(
+        # result = self._clone_voice(
+        #     prompt_wav,
+        #     prompt_text,
+        #     text,
+        #     str(output_path)
+        # )
+
+        # 执行克隆（在线程池中运行，因为 TTS 是 CPU 密集型）
+        output_path = settings.GPT_SoVITS_OUTPUT_DIR / f"{cache_key}.wav"
+
+        loop = asyncio.get_event_loop()
+        result = await loop.run_in_executor(
+            None,
+            self._clone_voice,
             prompt_wav,
             prompt_text,
             text,
             str(output_path)
         )
-
         if result:
             audio_url = settings.LOCAL_HOST + f"/static/voice/gpt_sovits_output/{cache_key}.wav"
             return audio_url

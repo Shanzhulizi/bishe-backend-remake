@@ -1,110 +1,127 @@
 from datetime import datetime, date
+from typing import List
+
+from sqlalchemy import select, delete
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.user_behavior import UserBehavior
 
 
 class BehaviorRepository:
-    def __init__(self, db):
+    def __init__(self, db: AsyncSession):
         self.db = db
 
-    def get_behavior(self, user_id: int, character_id: int, behavior_type: str):
+    async def get_behavior(self, user_id: int, character_id: int, behavior_type: str):
         """获取用户行为"""
         # 获取今天的开始和结束时间
         today_start = datetime.combine(date.today(), datetime.min.time())  # 今天 00:00:00
         today_end = datetime.combine(date.today(), datetime.max.time())  # 今天 23:59:59.999999
 
-        return self.db.query(UserBehavior).filter(
+        stmt = select(UserBehavior).where(
             UserBehavior.user_id == user_id,
             UserBehavior.character_id == character_id,
             UserBehavior.behavior_type == behavior_type,
             UserBehavior.created_at.between(today_start, today_end)
-        ).first()
+        )
+        result = await self.db.execute(stmt)
+        return result.scalar_one_or_none()
 
-    def get_like_record(self, user_id: int, character_id: int):
+    async def get_like_record(self, user_id: int, character_id: int):
         """获取点赞记录"""
-        return self.db.query(UserBehavior).filter(
+        stmt = select(UserBehavior).where(
             UserBehavior.user_id == user_id,
             UserBehavior.character_id == character_id,
-            UserBehavior.behavior_type == 'like'
+            UserBehavior.behavior_type == 'LIKE'
+        )
+        result = await self.db.execute(stmt)
+        return result.scalar_one_or_none()
 
-        ).first()
-
-    def record_view(self, user_id: int, character_id: int):
+    async def record_view(self, user_id: int, character_id: int):
         """记录浏览"""
         behavior = UserBehavior(
             user_id=user_id,
             character_id=character_id,
-            behavior_type='view',
+            behavior_type='VIEW',
             created_at=datetime.now()
         )
         self.db.add(behavior)
+        await self.db.flush()
 
-
-    def record_chat(self, user_id: int, character_id: int):
+    async def record_chat(self, user_id: int, character_id: int):
         """记录聊天"""
         behavior = UserBehavior(
             user_id=user_id,
             character_id=character_id,
-            behavior_type='chat',
+            behavior_type='CHAT',
             created_at=datetime.now()
         )
         self.db.add(behavior)
-        self.db.commit()
 
-    def record_like(self, user_id: int, character_id: int):
+        await self.db.flush()
+
+    async def record_like(self, user_id: int, character_id: int):
         """记录点赞"""
         behavior = UserBehavior(
             user_id=user_id,
             character_id=character_id,
-            behavior_type='like',
+            behavior_type='LIKE',
             created_at=datetime.now()
         )
         self.db.add(behavior)
-        self.db.commit()
+        await self.db.flush()
 
-    def delete_records(self, user_id, character_id, behavior_type):
-        self.db.query(UserBehavior).filter(
+    async def delete_records(self, user_id, character_id, behavior_type):
+        stmt = delete(UserBehavior).where(
             UserBehavior.user_id == user_id,
             UserBehavior.character_id == character_id,
             UserBehavior.behavior_type == behavior_type
-        ).delete()
-        self.db.commit()
+        )
+        await self.db.execute(stmt)
+        await self.db.flush()
 
-    def get_views_count(self, character_id: int):
+    async def get_views_count(self, character_id: int):
         """获取浏览次数"""
-        return self.db.query(UserBehavior).filter(
+        stmt = select(UserBehavior).where(
             UserBehavior.character_id == character_id,
-            UserBehavior.behavior_type == 'view'
-        ).count()
-    def get_chats_count(self, character_id: int):
+            UserBehavior.behavior_type == 'VIEW'
+        )
+        result = await self.db.execute(stmt)
+        return len(result.scalars().all())
+
+    async def get_chats_count(self, character_id: int):
         """获取聊天次数"""
-        return self.db.query(UserBehavior).filter(
+        stmt = select(UserBehavior).where(
             UserBehavior.character_id == character_id,
-            UserBehavior.behavior_type == 'chat'
-        ).count()
-    def get_likes_count(self, character_id: int):
+            UserBehavior.behavior_type == 'CHAT'
+        )
+        result = await self.db.execute(stmt)
+        return len(result.scalars().all())
+
+    async def get_likes_count(self, character_id: int) -> int:
         """获取点赞次数"""
-        return self.db.query(UserBehavior).filter(
+        stmt = select(UserBehavior).where(
             UserBehavior.character_id == character_id,
-            UserBehavior.behavior_type == 'like'
-        ).count()
+            UserBehavior.behavior_type == 'LIKE'
+        )
+        result = await self.db.execute(stmt)
+        return len(result.scalars().all())
 
-
-
-    def get_like_status(self, id, character_id):
+    async def get_like_status(self, user_id: int, character_id: int) -> bool:
         """获取点赞状态"""
-        is_liked = self.db.query(UserBehavior).filter(
+        stmt = select(UserBehavior).where(
             UserBehavior.character_id == character_id,
-            UserBehavior.user_id == id,
-            UserBehavior.behavior_type == 'like'
-        ).first() is not None
-        return is_liked
+            UserBehavior.user_id == user_id,
+            UserBehavior.behavior_type == 'LIKE'
+        )
+        result = await self.db.execute(stmt)
+        return result.scalar_one_or_none() is not None
 
-    def batch_get_like_status(self, id, character_ids):
+    async def batch_get_like_status(self, user_id: int, character_ids: List[int]) -> List:
         """批量获取点赞状态"""
-        likes = self.db.query(UserBehavior).filter(
+        stmt = select(UserBehavior).where(
             UserBehavior.character_id.in_(character_ids),
-            UserBehavior.user_id == id,
-            UserBehavior.behavior_type == 'like'
-        ).all()
-        return likes
+            UserBehavior.user_id == user_id,
+            UserBehavior.behavior_type == 'LIKE'
+        )
+        result = await self.db.execute(stmt)
+        return result.scalars().all()

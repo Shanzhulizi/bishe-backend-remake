@@ -1,45 +1,41 @@
 from datetime import datetime
 from typing import Optional, Tuple, List
 
-from sqlalchemy import or_
-from sqlalchemy.orm import Session, joinedload
+from sqlalchemy import select, update, or_, func
+from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import selectinload
 
-from app.models.category import Category
-from app.models.character import Character, character_categories, character_tags
-from app.models.tag import Tag
+from app.models.character import Character
 from app.schemas.character import CharacterCreate
 
 
 class CharacterRepository:
-    def __init__(self, db: Session):
+    def __init__(self, db: AsyncSession):
         self.db = db
 
-    def get_by_id(self, character_id: int) -> Optional[Character]:
+    async def get_by_id(self, character_id: int) -> Optional[Character]:
         """根据ID获取角色"""
-        return self.db.query(Character).filter(
-            Character.id == character_id
-        ).first()
 
+        stmt = select(Character).where(Character.id == character_id)
+        result = await self.db.execute(stmt)
+        return result.scalar_one_or_none()
 
-
-
-    def get_by_id_with_relations(self, character_id: int) -> Optional[Character]:
+    async def get_by_id_with_relations(self, character_id: int) -> Optional[Character]:
         """获取角色并加载关联的类别和标签"""
-        return self.db.query(Character) \
-            .options(
-            joinedload(Character.categories),
-            joinedload(Character.tags)
-        ) \
-            .filter(Character.id == character_id) \
-            .first()
+        stmt = select(Character).options(
+            selectinload(Character.categories),
+            selectinload(Character.tags)
+        ).where(Character.id == character_id)
+        result = await self.db.execute(stmt)
+        return result.scalar_one_or_none()
 
-    def get_by_name(self, name: str) -> Optional[Character]:
+    async def get_by_name(self, name: str) -> Optional[Character]:
         """根据名称获取角色"""
-        return self.db.query(Character).filter(
-            Character.name == name
-        ).first()
+        stmt = select(Character).where(Character.name == name)
+        result = await self.db.execute(stmt)
+        return result.scalar_one_or_none()
 
-    def get_all(
+    async def get_all(
             self,
             skip: int = 0,
             limit: int = 20,
@@ -50,54 +46,55 @@ class CharacterRepository:
             is_active: bool = True
     ) -> Tuple[List[Character], int]:
         """获取角色列表（支持过滤和搜索）"""
+        from app.models.character import character_categories, character_tags
 
-        query = self.db.query(Character).filter(Character.is_active == is_active)
+        stmt = select(Character).where(Character.is_active == is_active)
 
-        # 按类别筛选
         if category_id:
-            query = query.join(character_categories).filter(
+            stmt = stmt.join(character_categories).where(
                 character_categories.c.category_id == category_id
             )
 
-        # 按标签筛选
         if tag_id:
-            query = query.join(character_tags).filter(
+            stmt = stmt.join(character_tags).where(
                 character_tags.c.tag_id == tag_id
             )
 
-        # 关键词搜索
         if keyword:
-            query = query.filter(
+            stmt = stmt.where(
                 or_(
                     Character.name.ilike(f"%{keyword}%"),
                     Character.description.ilike(f"%{keyword}%")
                 )
             )
 
-        # 是否官方
         if is_official is not None:
-            query = query.filter(Character.is_official == is_official)
+            stmt = stmt.where(Character.is_official == is_official)
 
-        # 总数
-        total = query.count()
+        # 获取总数
+        count_stmt = select(func.count()).select_from(stmt.subquery())
+        total_result = await self.db.execute(count_stmt)
+        total = total_result.scalar()
 
         # 分页数据
-        characters = query.options(
-            joinedload(Character.categories),
-            joinedload(Character.tags)
+        stmt = stmt.options(
+            selectinload(Character.categories),
+            selectinload(Character.tags)
         ).order_by(
             Character.popularity_score.desc(),
             Character.created_at.desc()
-        ).offset(skip).limit(limit).all()
+        ).offset(skip).limit(limit)
+
+        result = await self.db.execute(stmt)
+        characters = result.scalars().all()
 
         return characters, total
 
-    def create_with_relations(self, data: CharacterCreate) -> Character:
-
-        """创建角色"""
-
+    async def create_with_relations(self, data: CharacterCreate) -> Character:
         """创建角色并添加关联"""
-        # 1. 创建角色
+        from app.models.category import Category
+        from app.models.tag import Tag
+
         character = Character(
             name=data.name,
             description=data.description,
@@ -113,71 +110,72 @@ class CharacterRepository:
             popularity_score=0.0
         )
         self.db.add(character)
-        self.db.flush()  # 获取 ID
+        await self.db.flush()
 
-        # 2. 添加类别
         if data.category_ids:
-            categories = self.db.query(Category).filter(
-                Category.id.in_(data.category_ids)
-            ).all()
+            stmt = select(Category).where(Category.id.in_(data.category_ids))
+            result = await self.db.execute(stmt)
+            categories = result.scalars().all()
             character.categories = categories
 
-        # 3. 添加标签
         if data.tag_ids:
-            tags = self.db.query(Tag).filter(
-                Tag.id.in_(data.tag_ids)
-            ).all()
+            stmt = select(Tag).where(Tag.id.in_(data.tag_ids))
+            result = await self.db.execute(stmt)
+            tags = result.scalars().all()
             character.tags = tags
 
-        self.db.commit()
-        self.db.refresh(character)
+        await self.db.commit()
+        await self.db.refresh(character)
         return character
 
-    def update_basic(self, character: Character, **kwargs) -> Character:
+    async def update_basic(self, character: Character, **kwargs) -> Character:
         """更新基本字段"""
         for key, value in kwargs.items():
             if value is not None:
                 setattr(character, key, value)
         character.updated_at = datetime.now()
         self.db.add(character)
-        self.db.flush()
+        await self.db.flush()
         return character
 
-    def update_categories(self, character: Character, category_ids: Optional[List[int]]) -> Character:
+    async def update_categories(self, character: Character, category_ids: Optional[List[int]]) -> Character:
         """更新角色类别"""
+        from app.models.category import Category
+
         if category_ids is not None:
-            if category_ids:  # 有传且不为空
-                categories = self.db.query(Category).filter(
-                    Category.id.in_(category_ids)
-                ).all()
+            if category_ids:
+                stmt = select(Category).where(Category.id.in_(category_ids))
+                result = await self.db.execute(stmt)
+                categories = result.scalars().all()
                 character.categories = categories
-            else:  # 传了空列表，清空所有类别
+            else:
                 character.categories = []
             self.db.add(character)
-            self.db.flush()
+            await self.db.flush()
         return character
 
-    def update_tags(self, character: Character, tag_ids: Optional[List[int]]) -> Character:
+    async def update_tags(self, character: Character, tag_ids: Optional[List[int]]) -> Character:
         """更新角色标签"""
+        from app.models.tag import Tag
+
         if tag_ids is not None:
-            if tag_ids:  # 有传且不为空
-                tags = self.db.query(Tag).filter(
-                    Tag.id.in_(tag_ids)
-                ).all()
+            if tag_ids:
+                stmt = select(Tag).where(Tag.id.in_(tag_ids))
+                result = await self.db.execute(stmt)
+                tags = result.scalars().all()
                 character.tags = tags
-            else:  # 传了空列表，清空所有标签
+            else:
                 character.tags = []
             self.db.add(character)
-            self.db.flush()
+            await self.db.flush()
         return character
 
-    def update_complete(self, character_id: int, data: dict) -> Optional[Character]:
-        """完整更新角色（一次性更新所有）"""
-        character = self.get_by_id(character_id)
+    async def update_complete(self, character_id: int, data: dict) -> Optional[Character]:
+        """完整更新角色"""
+        character = await self.get_by_id(character_id)
         if not character:
             return None
 
-        # 1. 更新基本字段
         basic_fields = {
             'name': data.get('name'),
             'description': data.get('description'),
@@ -189,79 +187,74 @@ class CharacterRepository:
             'is_active': data.get('is_active'),
             'last_used_at': data.get('last_used_at')
         }
-        character = self.update_basic(character, **basic_fields)
+        character = await self.update_basic(character, **basic_fields)
 
-        # 2. 更新类别
         if 'category_ids' in data:
-            character = self.update_categories(character, data['category_ids'])
+            character = await self.update_categories(character, data['category_ids'])
 
-        # 3. 更新标签
         if 'tag_ids' in data:
-            character = self.update_tags(character, data['tag_ids'])
+            character = await self.update_tags(character, data['tag_ids'])
 
         return character
 
-    def delete(self, character_id: int) -> bool:
+    async def delete(self, character_id: int) -> bool:
         """删除角色（硬删除）"""
-        character = self.get_by_id(character_id)
+        character = await self.get_by_id(character_id)
         if character:
-            self.db.delete(character)
-            self.db.flush()
+            await self.db.delete(character)
+            await self.db.flush()
             return True
         return False
 
-    def soft_delete(self, character_id: int) -> bool:
+    async def soft_delete(self, character_id: int) -> bool:
         """软删除"""
-        character = self.get_by_id(character_id)
+        character = await self.get_by_id(character_id)
         if character:
             character.is_active = False
             character.updated_at = datetime.now()
             self.db.add(character)
-            self.db.flush()
+            await self.db.flush()
             return True
         return False
 
-    def increment_like_count(self, character_id: int):
+    async def increment_like_count(self, character_id: int):
         """增加点赞数"""
-        self.db.query(Character).filter(Character.id == character_id).update({
-            Character.like_count: Character.like_count + 1
-        })
-        self.db.commit()
+        stmt = update(Character).where(Character.id == character_id).values(
+            like_count=Character.like_count + 1
+        )
+        await self.db.execute(stmt)
+        await self.db.commit()
 
-    def decrement_like_count(self, character_id: int):
+    async def decrement_like_count(self, character_id: int):
         """减少点赞数"""
-        self.db.query(Character).filter(Character.id == character_id).update({
-            Character.like_count: Character.like_count - 1
-        })
-        self.db.commit()
+        stmt = update(Character).where(Character.id == character_id).values(
+            like_count=Character.like_count - 1
+        )
+        await self.db.execute(stmt)
+        await self.db.commit()
 
-    def get_like_count(self, character_id):
-        "获取某角色点赞数"
-        character = self.get_by_id(character_id)
+    async def get_like_count(self, character_id: int) -> int:
+        """获取某角色点赞数"""
+        character = await self.get_by_id(character_id)
         return character.like_count if character else 0
 
-    def get_chat_count(self, character_id) -> int:
+    async def get_chat_count(self, character_id: int) -> int:
         """获取角色的聊天数"""
-        character= self.get_by_id(character_id)
+        character = await self.get_by_id(character_id)
         return character.chat_count if character else 0
 
-    def increment_view_count(self, character_id: int):
+    async def increment_view_count(self, character_id: int):
         """增加浏览次数"""
-        self.db.query(Character).filter(Character.id == character_id).update({
-            Character.view_count: Character.view_count + 1
-        })
-    def increment_chat_count(self, character_id):
-        self.db.query(Character).filter(Character.id == character_id).update({
-            Character.chat_count: Character.chat_count + 1
-        })
+        stmt = update(Character).where(Character.id == character_id).values(
+            view_count=Character.view_count + 1
+        )
+        await self.db.execute(stmt)
+        await self.db.flush()
 
-
-
-
-
-
-
-
-
-
-
+    async def increment_chat_count(self, character_id: int):
+        """增加聊天次数"""
+        stmt = update(Character).where(Character.id == character_id).values(
+            chat_count=Character.chat_count + 1
+        )
+        await self.db.execute(stmt)
+        await self.db.flush()

@@ -1,21 +1,24 @@
-import uuid
-from pathlib import Path
-
-import soundfile as sf
-
 from app.core.config import Settings
-from app.repositories.voice_repo import VoiceRepository
 
 settings = Settings()
 
 from app.core.logging import get_logger
 
 logger = get_logger(__name__)
-voice_repo = VoiceRepository()
 
 
+import uuid
+from pathlib import Path
+import soundfile as sf
+from sqlalchemy.ext.asyncio import AsyncSession
+
+from app.core.config import settings
+from app.repositories.voice_repo import VoiceRepository
 class VoiceService:
 
+    def __init__(self, db: AsyncSession):
+        self.db = db
+        self.voice_repo = VoiceRepository(db)
     async def save_voice(self, audio, voice_name, voice_text, user_id):
         suffix = Path(audio.filename).suffix
         logger.info(
@@ -39,7 +42,7 @@ class VoiceService:
         logger.info(
             f"保存声音: voice_id={voice_id}, voice_name={voice_name}, voice_text={voice_text}, wav_path={voice_path}, duration={duration}, user_id={user_id}")
 
-        voice_repo.save_voice(voice_id, voice_name, voice_text, voice_url, duration, user_id)
+        await self.voice_repo.save_voice(voice_id, voice_name, voice_text, voice_url, duration, user_id)
 
         return {
             "voice_id": voice_id,
@@ -47,5 +50,13 @@ class VoiceService:
             "duration": duration
         }
 
-    def get_all_voices(self, skip, limit):
-        return voice_repo.list_voices(skip, limit)
+    async def get_all_voices(self, skip, limit):
+        return await self.voice_repo.list_voices(skip, limit)
+
+    async def get_voice_by_id(self, voice_id: str):
+        """根据ID获取声音"""
+        return await self.voice_repo.get_voice_by_id(voice_id)
+
+    async def get_voices_by_user(self, user_id: int, skip: int = 0, limit: int = 20) -> list:
+        """获取用户的所有声音"""
+        return await self.voice_repo.get_voices_by_user(user_id, skip, limit)

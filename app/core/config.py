@@ -29,6 +29,15 @@ class Settings(BaseSettings):
             f"@{self.DB_HOST}:{self.DB_PORT}/{self.DB_NAME}"
         )
 
+    # 异步数据库配置
+    @property
+    def ASYNC_DATABASE_URL(self) -> str:
+        """异步数据库连接（使用 asyncpg）"""
+        return (
+            f"postgresql+asyncpg://"
+            f"{self.DB_USER}:{self.DB_PASSWORD}"
+            f"@{self.DB_HOST}:{self.DB_PORT}/{self.DB_NAME}"
+        )
     # CORS配置
     BACKEND_CORS_ORIGINS: List[str] = [
         "http://localhost:3000",

@@ -37,13 +37,29 @@ setup_logging()
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     # 启动时执行
-    print("🚀 应用启动中...")
+
+    try:
+
+        from app.services.ars_service import ASRService
+        loop = asyncio.get_event_loop()
+        await loop.run_in_executor(None, ASRService._get_model_sync)
+        print("✅ ASR 模型预加载完成")
+    except Exception as e:
+        print(f"⚠️ ASR 模型预加载失败: {e}")
+
+    # print("🚀 应用启动中...")
     start_scheduler()
     yield
     # 关闭时执行
     print("🛑 应用关闭中...")
     stop_scheduler()
 
+    # 清理 ASR 线程池
+    try:
+        from app.services.ars_service import ASRService
+        await ASRService.close()
+    except:
+        pass
 
 app = FastAPI(
     title="AI角色扮演聊天平台",
@@ -82,14 +98,6 @@ app.include_router(tag.router, prefix="/api/tag", tags=["角色标签"])
 async def root():
     return {"message": "AI角色扮演聊天平台API"}
 
-project_root = Path(__file__).parent .parent
-# 3. 拼接 static 目录的绝对路径
-static_dir = project_root / "static"
-app.mount(
-    "/static",
-    StaticFiles(directory=static_dir),
-    name="static"
-)
 
 # @app.onmodel()_event("startup")
 # async def startup_event():

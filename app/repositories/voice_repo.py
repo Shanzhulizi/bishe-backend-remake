@@ -1,41 +1,53 @@
-from app.db.session import SessionLocal
+from typing import List
+
+from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession
+
 from app.models.voice import Voice
 
 
 class VoiceRepository:
 
-    def save_voice(self,voice_id, voice_name, voice_text, voice_url, duration, user_id):
-        try:
-            db = SessionLocal()
-            voice = Voice(
-                voice_id=voice_id,
-                voice_name=voice_name,
-                voice_text=voice_text,
-                voice_url=voice_url,
-                duration=duration,
-                user_id=user_id
-            )
-            db.add(voice)
-            db.commit()
-            db.refresh(voice)
-            return voice
-        finally:
-            db.close()
+    def __init__(self, db: AsyncSession):
+        self.db = db
+    async def save_voice(self,voice_id, voice_name, voice_text, voice_url, duration, user_id):
 
-    def list_voices(self,skip, limit):
-        db = SessionLocal()
-        voices = db.query(Voice).offset(skip).limit(limit).all()
-        db.close()
-        return voices
+        voice = Voice(
+            voice_id=voice_id,
+            voice_name=voice_name,
+            voice_text=voice_text,
+            voice_url=voice_url,
+            duration=duration,
+            user_id=user_id
+        )
 
-    def get_voice_by_id(self, voice_id):
-        db = SessionLocal()
-        voice = db.query(Voice).filter(Voice.voice_id == voice_id).first()
-        db.close()
-
+        self.db.add(voice)
+        await self.db.flush()
+        await self.db.refresh(voice)
         return voice
 
-    #
+
+    async def list_voices(self,skip, limit):
+        """获取所有声音"""
+        stmt = select(Voice).order_by(Voice.created_at.desc()).offset(skip).limit(limit)
+        result = await self.db.execute(stmt)
+        return result.scalars().all()
+
+    async def get_voice_by_id(self, voice_id):
+        stmt = select(Voice).where(Voice.voice_id == voice_id)
+        result = await self.db.execute(stmt)
+        return result.scalar_one_or_none()
+
+
+    async def get_voices_by_user(self, user_id: int, skip: int = 0, limit: int = 20) -> List[Voice]:
+        """获取用户的所有声音"""
+        stmt = select(Voice).where(
+            Voice.user_id == user_id
+        ).order_by(Voice.created_at.desc()).offset(skip).limit(limit)
+        result = await self.db.execute(stmt)
+        return result.scalars().all()
+
+
     # @staticmethod
     # def create_voice(voice_name: str, voice_text: str, voice_wav_url: str,
     #                  duration: float, description: str = "") -> Voice:

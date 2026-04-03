@@ -4,10 +4,9 @@ from sqlalchemy import Enum as SQLEnum
 
 
 class BehaviorType(str, PyEnum):
-    VIEW = "view"
-    CHAT = "chat"
-    LIKE = "like"
-
+    VIEW = "VIEW"  # 改回大写
+    CHAT = "CHAT"  # 改回大写
+    LIKE = "LIKE"
 
 
 from sqlalchemy import Column, BigInteger, Integer, TIMESTAMP, ForeignKey

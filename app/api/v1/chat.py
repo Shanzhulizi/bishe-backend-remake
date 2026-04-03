@@ -3,16 +3,14 @@ import asyncio
 from fastapi import APIRouter, Depends, Form, File, UploadFile
 from fastapi.responses import StreamingResponse
 
+from app.api.deps import get_async_db
 from app.api.deps import get_current_user
-from app.api.deps import get_db
 from app.core.logging import get_logger
-from app.db.session import SessionLocal
 from app.schemas.chat import ChatRequest
 from app.services.ars_service import ASRService
 from app.services.character_service import CharacterService
 from app.services.chat_service import ChatService
 from app.services.gpt_covits_service import GptCovitsService
-from app.services.voice_service import VoiceService
 
 router = APIRouter()
 
@@ -41,7 +39,7 @@ logger = get_logger(__name__)
 @router.post("/stream")
 async def send_chat_stream(
         req: ChatRequest,
-        db=Depends(get_db),
+        db=Depends(get_async_db),
         user=Depends(get_current_user)
 ):
     async def generator():
@@ -51,7 +49,6 @@ async def send_chat_stream(
         try:
             # service = ChatService(db)
             async for token in service.send_message_stream(
-                    db=db,
                     user_id=user.id,
                     character_id=req.character_id,
                     content=req.message
@@ -102,13 +99,12 @@ async def send_chat_stream(
 #
 
 
-
 @router.post("/voice_chat")
 async def voice_chat(
         character_id: int = Form(...),
         audio: UploadFile = File(...),
         user=Depends(get_current_user),
-        db=Depends(get_db)
+        db=Depends(get_async_db)
 ):
     # 1. ASR
     audio_bytes = await audio.read()
@@ -145,7 +141,6 @@ async def voice_chat(
     except Exception as e:
         logger.error(f"聊天服务失败: {e}")
         reply_text = "抱歉，AI 服务暂时不可用，请稍后再试"
-
 
     logger.info(f"角色 {character_id} 回复用户 {user.id} 消息: {reply_text}")
     # 3. TTS

@@ -1,18 +1,19 @@
 from sqlalchemy import select
-from sqlalchemy.orm import Session
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.user import User
 
 
 class UserRepository:
-    @staticmethod
-    def get_by_username(db: Session, username: str) -> User:
+    def __init__(self, db: AsyncSession):
+        self.db = db
+
+    async def get_by_username(self, username: str) -> User:
         stmt = select(User).where(User.username == username)
-        result = db.execute(stmt)
+        result =await self.db.execute(stmt)
         return result.scalars().first()
 
-    @staticmethod
-    async def get_by_id(db: Session, user_id: int) -> User | None:
+    async def get_by_id(self, user_id: int) -> User | None:
         stmt = select(User).where(User.id == user_id)
-        result = db.execute(stmt)
+        result =await self.db.execute(stmt)
         return result.scalars().first()

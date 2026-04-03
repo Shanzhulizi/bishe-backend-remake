@@ -1,17 +1,13 @@
 import asyncio
 import json
+import re
 from typing import Dict
 
 import aiohttp
-from types import SimpleNamespace
 import ollama
-import re
+
+from app.ai.local_llm import LocalLLM
 from app.core.config import Settings
-from app.core.logging import get_logger
-from types import SimpleNamespace
-
-import ollama
-
 from app.core.logging import get_logger
 
 logger = get_logger(__name__)
@@ -26,6 +22,20 @@ class EmotionService:
         self.api_key = settings.DEEPSEEK_API_KEY
         self.api_url = settings.DEEPSEEK_BASE_URL
 
+        self.model = "qwen2.5:3b"
+        self._cache: Dict[str, Dict] = {}
+
+        # 快速关键词匹配（避免调用模型）
+        self._keywords = {
+            '开心': ['开心', '高兴', '快乐', '哈哈', '棒'],
+            '悲伤': ['伤心', '难过', '哭', '痛苦', '难受'],
+            '愤怒': ['生气', '愤怒', '气死', '烦', '讨厌'],
+            '恐惧': ['害怕', '恐怖', '担心', '怕'],
+            '惊讶': ['惊讶', '吃惊', '哇', '没想到'],
+            '疑惑': ['疑惑', '奇怪', '不懂', '为什么'],
+            '厌恶': ['讨厌', '恶心', '反感'],
+            '平静': ['嗯', '哦', '好的', '知道了']
+        }
 
 
     async def analyze_use_api(self, text: str) -> Dict:
@@ -131,173 +141,88 @@ class EmotionService:
             'needs_calm': False
         }
 
+    async def analyze_use_model(self, text: str) -> Dict:
+        """分析情感"""
+        # 1. 快速关键词匹配
+        quick = self._quick_match(text)
+        if quick and quick['score'] > 0.8:
+            return quick
 
+        # # 2. 检查缓存
+        # cache_key = hashlib.md5(text.encode()).hexdigest()
+        # if cache_key in self._cache:
+        #     return self._cache[cache_key]
 
-    async def analyze_use_model(self,message: str) -> dict:
-        """
-        使用本地 Ollama 模型分析情感
+        # 3. 调用本地模型
+        result = await self._call_llm(text)
+        # self._cache[cache_key] = result
+        return result
 
-        返回格式:
-        {
-            "emotion": "开心",
-            "score": 0.85,
-            "raw_response": "情绪：开心，分数：0.85"
-        }
-        """
-        try:
-            # 构建消息 - 分开 system 和 user
-            ollama_messages = [
-                {
-                    "role": "system",
-                    "content": "你是一个情感分析专家。请分析用户消息中的情绪，从[开心,悲伤,愤怒,恐惧,惊讶,疑惑,厌恶,平静]中选择最符合的一个，并给出可信度分数（0-1之间的小数）。\n\n输出格式：情绪：xxx，分数：0.xx\n只输出这个格式，不要有其他内容。"
-                },
-                {
-                    "role": "user",
-                    "content": message
-                }
-            ]
-
-            logger.info(f"发送到Ollama的消息: {ollama_messages}")
-
-            # 调用 Ollama
-            resp = ollama.chat(
-                model="qwen2.5:7b",
-                messages=ollama_messages,
-                stream=False,
-                options={
-                    "temperature": 0.3,  # 降低温度，让输出更稳定
-                    "num_predict": 100,  # 只需要很短的回复
-                    "top_k": 40,
-                    "top_p": 0.9,
-                    "repeat_penalty": 1.1
-                }
-            )
-
-            logger.info(f"Ollama原始回复: {resp}")
-
-            # 提取回复内容
-            if isinstance(resp, dict):
-                if "message" in resp:
-                    reply = resp["message"].get("content", "")
-                elif "response" in resp:
-                    reply = resp["response"]
-                else:
-                    reply = str(resp)
-            else:
-                reply = str(resp)
-
-            logger.info(f"Ollama回复内容: {reply}")
-
-            # 解析情绪和分数
-            emotion, score = self.parse_emotion_response(reply)
-            # 根据情绪映射到建议的回应语气
-            tone = self._map_emotion_to_tone(emotion)
-
-            # 返回字典格式
+    def _quick_match(self, text: str) -> Dict | None:
+        """快速关键词匹配"""
+        max_score = 0
+        matched = '平静'
+        for emotion, keywords in self._keywords.items():
+            for kw in keywords:
+                if kw in text:
+                    score = 0.8 + len(kw) * 0.02
+                    if score > max_score:
+                        max_score = score
+                        matched = emotion
+        if max_score > 0:
             return {
-                "emotion": emotion,
-                "score": score,
-                "tone": tone,
-                "raw_response": reply
+                'emotion': matched,
+                'score': min(0.95, max_score),
+                'tone': self._tone_map(matched)
             }
+        return None
 
-        except ollama.ResponseError as e:
-            logger.error(f"Ollama响应错误: {e.error}")
-            if "models not found" in str(e).lower():
-                raise Exception(f"模型 'qwen2.5' 未安装，请运行: ollama pull qwen2.5")
-            raise Exception(f"Ollama调用失败: {str(e)}")
+    async def _call_llm(self, text: str) -> Dict:
+        """调用本地模型"""
+        prompt = f"""分析情感，只返回JSON：{{"emotion":"开心/悲伤/愤怒/恐惧/惊讶/疑惑/厌恶/平静","score":0.0-1.0}}
 
-        except Exception as e:
-            logger.error(f"本地模型调用失败: {str(e)}")
-            raise Exception(f"本地模型调用失败: {str(e)}")
+文本：{text}"""
 
-    def _map_emotion_to_tone(self, emotion: str) -> str:
-        """将情绪映射到建议的回应语气"""
-        tone_map = {
-            "开心": "活泼欢快",
-            "悲伤": "温柔安慰",
-            "愤怒": "冷静安抚",
-            "恐惧": "温和鼓励",
-            "惊讶": "热情回应",
-            "疑惑": "耐心解释",
-            "厌恶": "保持距离",
-            "平静": "自然对话"
-        }
-        return tone_map.get(emotion, "自然对话")
+        messages = [
+            {"role": "system", "content": "你是情感分析专家，只返回JSON。"},
+            {"role": "user", "content": prompt}
+        ]
 
+        response = await LocalLLM.chat(
+            messages=messages,
+            model=self.model,
+            temperature=0.1,
+            num_predict=80
+        )
 
-    def parse_emotion_response(self,reply: str) -> tuple:
-        """
-        解析 Ollama 返回的情绪和分数
+        return self._parse_response(response or "平静")
 
-        支持格式:
-        - "情绪：开心，分数：0.85"
-        - "情绪：悲伤，分数：0.92"
-        - "开心 0.85"
-        - "开心 (0.85)"
-        """
-        emotions = ['开心', '悲伤', '愤怒', '恐惧', '惊讶', '疑惑', '厌恶', '平静']
-
-        # 默认值
-        emotion = "平静"
-        score = 0.5
-
+    def _parse_response(self, text: str) -> Dict:
         try:
-            # 方式1：匹配 "情绪：xxx，分数：0.xx"
-            pattern1 = r'情绪[：:]\s*([\u4e00-\u9fa5]+)[，,]\s*分数[：:]\s*([0-9.]+)'
-            match = re.search(pattern1, reply)
+            import json
+            start = text.find('{')
+            end = text.rfind('}') + 1
+            if start >= 0:
+                data = json.loads(text[start:end])
+                emotion = data.get('emotion', '平静')
+                score = float(data.get('score', 0.5))
+            else:
+                emotion, score = '平静', 0.5
+        except:
+            emotion, score = '平静', 0.5
+        return {
+            'emotion': emotion,
+            'score': score,
+            'tone': self._tone_map(emotion)
+        }
 
-            if match:
-                emotion = match.group(1)
-                score = float(match.group(2))
-                # 验证情绪是否在列表中
-                if emotion not in emotions:
-                    # 模糊匹配
-                    for e in emotions:
-                        if e in emotion:
-                            emotion = e
-                            break
-                # 限制分数范围
-                score = max(0.0, min(1.0, score))
-                return emotion, score
-
-            # 方式2：匹配 "开心 0.85" 或 "开心 (0.85)"
-            pattern2 = r'([\u4e00-\u9fa5]+)\s*[（(]?([0-9.]+)[）)]?'
-            match = re.search(pattern2, reply)
-
-            if match:
-                emotion = match.group(1)
-                score = float(match.group(2))
-                if emotion not in emotions:
-                    for e in emotions:
-                        if e in emotion:
-                            emotion = e
-                            break
-                score = max(0.0, min(1.0, score))
-                return emotion, score
-
-            # 方式3：尝试在回复中找情绪词
-            for e in emotions:
-                if e in reply:
-                    emotion = e
-                    # 尝试找附近的数字作为分数
-                    numbers = re.findall(r'0\.\d+|\d+\.\d+', reply)
-                    if numbers:
-                        score = float(numbers[0])
-                        score = max(0.0, min(1.0, score))
-                    break
-
-            logger.warning(f"无法解析回复: {reply}，使用默认值")
-            return emotion, score
-
-        except Exception as e:
-            logger.error(f"解析情绪失败: {e}, 回复: {reply}")
-            return "平静", 0.5
-
-
-
-
-
+    def _tone_map(self, emotion: str) -> str:
+        tones = {
+            '开心': '活泼欢快', '悲伤': '温柔安慰', '愤怒': '冷静安抚',
+            '恐惧': '温和鼓励', '惊讶': '热情回应', '疑惑': '耐心解释',
+            '厌恶': '保持距离', '平静': '自然对话'
+        }
+        return tones.get(emotion, '自然对话')
 
 
 # 创建全局实例

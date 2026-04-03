@@ -1,53 +1,63 @@
 from datetime import datetime
 from typing import List, Optional
 
-from sqlalchemy.orm import Session
+from sqlalchemy import select, func
+from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.models.character import character_tags
 from app.models.tag import Tag
 
 
 class TagRepository:
-    def __init__(self, db: Session):
+    def __init__(self, db: AsyncSession):
         self.db = db
 
-    def get_by_id(self, tag_id: int) -> Optional[Tag]:
-        return self.db.query(Tag).filter(Tag.id == tag_id).first()
+    async def get_by_id(self, tag_id: int) -> Optional[Tag]:
+        stmt = select(Tag).where(Tag.id == tag_id)
+        result = await self.db.execute(stmt)
+        return result.scalar_one_or_none()
 
-    def get_by_name(self, name: str) -> Optional[Tag]:
-        return self.db.query(Tag).filter(Tag.name == name).first()
+    async def get_by_name(self, name: str) -> Optional[Tag]:
+        stmt = select(Tag).where(Tag.name == name)
+        result = await self.db.execute(stmt)
+        return result.scalar_one_or_none()
 
-    def get_all(self, skip: int = 0, limit: int = 100) -> List[Tag]:
-        return self.db.query(Tag) \
-            .order_by(Tag.sort_order, Tag.id) \
-            .offset(skip) \
-            .limit(limit) \
-            .all()
 
-    def create(self, name: str, sort_order: int = 0) -> Tag:
+    async def get_all(self, skip: int = 0, limit: int = 100) -> List[Tag]:
+        stmt = select(Tag).order_by(Tag.sort_order, Tag.id).offset(skip).limit(limit)
+        result = await self.db.execute(stmt)
+        return result.scalars().all()
+
+    async def create(self, name: str, sort_order: int = 0) -> Tag:
         tag = Tag(name=name, sort_order=sort_order, created_at=datetime.now())
         self.db.add(tag)
-        self.db.commit()
-        self.db.refresh(tag)
+        await self.db.flush()
+        await self.db.refresh(tag)
         return tag
 
-    def update(self, tag: Tag) -> Tag:
+    async def update(self, tag: Tag) -> Tag:
         """更新标签"""
         self.db.add(tag)
-        self.db.commit()  # ✅ repo 里 commit
-        self.db.refresh(tag)
+        await self.db.flush()
+        await self.db.refresh(tag)
         return tag
 
-    def delete(self, tag: Tag) -> bool:
-        self.db.delete(tag)
-        self.db.commit()
+    async def delete(self, tag: Tag) -> bool:
+        await self.db.delete(tag)
+        await self.db.flush()
         return True
 
-    def count_use(self, tag_id: int) -> int:
+    async def count_use(self, tag_id: int) -> int:
         """统计标签被多少角色使用"""
-        from app.models.character import character_tags
-        return self.db.query(character_tags).filter(character_tags.c.tag_id == tag_id).count()
+        stmt = select(func.count()).select_from(character_tags).where(
+            character_tags.c.tag_id == tag_id
+        )
+        result = await self.db.execute(stmt)
+        return result.scalar_one_or_none() or 0
 
-    def search(self, keyword: str, limit: int = 20) -> List[Tag]:
-        return self.db.query(Tag).filter(
+    async def search(self, keyword: str, limit: int = 20) -> List[Tag]:
+        stmt = select(Tag).where(
             Tag.name.ilike(f"%{keyword}%")
-        ).order_by(Tag.sort_order).limit(limit).all()
+        ).order_by(Tag.sort_order).limit(limit)
+        result = await self.db.execute(stmt)
+        return result.scalars().all()

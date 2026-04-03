@@ -1,13 +1,13 @@
-from fastapi import APIRouter, Depends, HTTPException, Request
+from fastapi import APIRouter, Depends
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy.orm import Session
 
-from app.api.deps import get_current_user, get_db
+from app.api.deps import get_current_user, get_async_db
 from app.core.constants import ResponseCode
 from app.core.logging import get_logger
+from app.models.user import User
 from app.schemas.common import ResponseModel
 from app.schemas.user import *
-from app.services.user_service import create_user, user_login
+from app.services.user_service import UserService
 
 logger = get_logger(__name__)
 
@@ -15,13 +15,14 @@ router = APIRouter()
 
 
 @router.post("/register", response_model=ResponseModel[UserOut])
-def register(
+async def register(
         user_in: UserCreate,
-        db: AsyncSession = Depends(get_db),
+        db: AsyncSession = Depends(get_async_db),
 ):
     logger.info(f"注册用户: {user_in.username}")
+    user_service = UserService(db)
     try:
-        user = create_user(db, user_in)
+        user = await user_service.create_user( user_in)
         logger.info(f"用户注册成功,用户id: {user.id}")
         return ResponseModel.success(
             msg="注册成功",
@@ -36,13 +37,14 @@ def register(
 
 
 @router.post("/login", response_model=ResponseModel[LoginResponse])
-def login(
+async def login(
         user_in: LoginRequest,
-        db: Session = Depends(get_db),
+        db: AsyncSession = Depends(get_async_db),
 ):
     logger.info(f"用户登录: {user_in.username}")
+    user_service = UserService(db)
     try:
-        token = user_login(db, user_in.username, user_in.password)
+        token =await user_service.user_login( user_in.username, user_in.password)
         logger.info(f"登录成功: {token}")
         return ResponseModel.success(
             msg="登录成功",
@@ -60,29 +62,9 @@ def login(
 
 @router.get("/me", response_model=ResponseModel[UserDetail])
 async def me(
-        request: Request,
-        db: AsyncSession = Depends(get_db),
+        current_user: User = Depends(get_current_user)
 ):
-    auth = request.headers.get("Authorization")
-
-    logger.info(f"获取用户信息")
-    if not auth or not auth.startswith("Bearer "):
-        raise HTTPException(status_code=401)
-
-    token = auth.replace("Bearer ", "")
-
-    logger.info(f"获取用户信息: {token}")
-    try:
-        user_profile = await get_current_user(token, db)
-
-        logger.info(f"用户id：{user_profile.id}")
-        return ResponseModel.success(
-            msg="查询成功",
-            data=user_profile,
-        )
-    except ValueError as e:
-
-        return ResponseModel.error(
-            code=ResponseCode.USER_ALREADY_EXISTS,
-            msg="查询失败，" + str(e) + ""
-        )
+    return ResponseModel.success(
+        msg="查询成功",
+        data=current_user
+    )

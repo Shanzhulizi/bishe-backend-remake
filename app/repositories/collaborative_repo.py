@@ -2,8 +2,9 @@
 from datetime import datetime, timedelta
 from typing import List, Tuple
 
-from sqlalchemy import func, desc
-from sqlalchemy.orm import Session, joinedload
+from sqlalchemy import select, func, desc
+from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import selectinload
 
 from app.models.character import Character
 from app.models.user_behavior import UserBehavior
@@ -12,30 +13,32 @@ from app.models.user_behavior import UserBehavior
 class CollaborativeRepository:
     """协同过滤数据仓库"""
 
-    def __init__(self, db: Session):
+    def __init__(self, db: AsyncSession):
         self.db = db
 
-    def get_user_interacted_characters(self, user_id: int, days: int = 30) -> List[int]:
+    async def get_user_interacted_characters(self, user_id: int, days: int = 30) -> List[int]:
         """
         获取用户互动过的角色ID（带权重）
         """
         since = datetime.now() - timedelta(days=days)
 
-        results = self.db.query(
+
+        stmt = select(
             UserBehavior.character_id,
             func.count(UserBehavior.id).label('count')
-        ).filter(
+        ).where(
             UserBehavior.user_id == user_id,
             UserBehavior.created_at >= since
         ).group_by(
             UserBehavior.character_id
         ).order_by(
             desc('count')
-        ).limit(50).all()
+        ).limit(50)
 
-        return [r[0] for r in results]
+        result = await self.db.execute(stmt)
+        return [row[0] for row in result.all()]
 
-    def find_similar_users(
+    async def find_similar_users(
             self,
             user_id: int,
             user_characters: List[int],
@@ -45,31 +48,25 @@ class CollaborativeRepository:
         找到相似用户（基于共同互动的角色）
         返回: [(user_id, 相似度分数)]
         """
-        # 找也互动过这些角色的其他用户
-        similar_users = self.db.query(
+        stmt = select(
             UserBehavior.user_id,
             func.count(UserBehavior.character_id).label('common_count')
-        ).filter(
+        ).where(
             UserBehavior.character_id.in_(user_characters),
             UserBehavior.user_id != user_id
         ).group_by(
             UserBehavior.user_id
         ).order_by(
             desc('common_count')
-        ).limit(limit).all()
+        ).limit(limit)
 
-        # 计算相似度分数
+        result = await self.db.execute(stmt)
+        rows = result.all()
+
         total_chars = len(user_characters)
-        result = []
-        # Jaccard 相似度 = 交集大小 / 并集大小
-        #               = 两个用户共同喜欢的角色数 / 两个用户喜欢的所有角色数
-        for other_id, common_count in similar_users:
-            similarity = common_count / total_chars  # Jaccard 相似度
-            result.append((other_id, similarity))
+        return [(row[0], row[1] / total_chars) for row in rows]
 
-        return result
-
-    def get_users_preferred_characters(
+    async def get_users_preferred_characters(
             self,
             user_ids: List[int],
             exclude_ids: List[int],
@@ -79,25 +76,32 @@ class CollaborativeRepository:
         获取这些用户喜欢的角色
         """
         # 统计这些用户最常互动的角色
-        popular_chars = self.db.query(
+        stmt = select(
             UserBehavior.character_id,
             func.count(UserBehavior.id).label('popularity')
-        ).filter(
+        ).where(
             UserBehavior.user_id.in_(user_ids),
-            ~UserBehavior.character_id.in_(exclude_ids)  # 排除当前用户已互动的
+            ~UserBehavior.character_id.in_(exclude_ids)
         ).group_by(
             UserBehavior.character_id
         ).order_by(
             desc('popularity')
-        ).limit(limit).all()
+        ).limit(limit)
 
-        char_ids = [c[0] for c in popular_chars]
+        result = await self.db.execute(stmt)
+        char_ids = [row[0] for row in result.all()]
+
+        if not char_ids:
+            return []
 
         # 获取完整角色信息
-        return self.db.query(Character).options(
-            joinedload(Character.categories),
-            joinedload(Character.tags)
-        ).filter(
+        stmt = select(Character).options(
+            selectinload(Character.categories),
+            selectinload(Character.tags)
+        ).where(
             Character.id.in_(char_ids),
             Character.is_active == True
-        ).all()
+        )
+
+        result = await self.db.execute(stmt)
+        return result.scalars().all()

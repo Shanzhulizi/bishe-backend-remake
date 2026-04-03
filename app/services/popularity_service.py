@@ -1,14 +1,15 @@
 # app/services/popularity_service.py
-from sqlalchemy import func, desc, and_
-from sqlalchemy.orm import Session
-from datetime import datetime, timedelta
-from typing import Dict, Any
-import logging
 
-from app.models.character import Character
-from app.models.user_behavior import UserBehavior, BehaviorType
+from datetime import datetime, timedelta
+from typing import Dict
+
+from sqlalchemy import select, func
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.logging import get_logger
+from app.models.character import Character
+from app.models.user_behavior import BehaviorType
+from app.models.user_behavior import UserBehavior
 
 logger = get_logger(__name__)
 
@@ -16,10 +17,10 @@ logger = get_logger(__name__)
 class PopularityService:
     """角色热度评分服务"""
 
-    def __init__(self, db: Session):
+    def __init__(self, db: AsyncSession):
         self.db = db
 
-    def calculate_score(
+    async def calculate_score(
             self,
             character_id: int,
             weights: Dict[str, float] = None
@@ -33,15 +34,18 @@ class PopularityService:
         """
         if weights is None:
             weights = {
-                'chat': 1.0,  # 聊天权重
-                'like': 2.0,  # 点赞权重
-                'view': 0.3,  # 浏览权重
-                'recent': 1.5,  # 近期行为权重
-                'decay': 0.1  # 时间衰减因子
+                'CHAT': 1.0,  # 聊天权重
+                'LIKE': 2.0,  # 点赞权重
+                'VIEW': 0.3,  # 浏览权重
+                'RECENT': 1.5,  # 近期行为权重
+                'DECAY': 0.1  # 时间衰减因子
             }
 
         # 获取角色
-        character = self.db.query(Character).get(character_id)
+        stmt = select(Character).where(Character.id == character_id)
+        result = await self.db.execute(stmt)
+        character = result.scalar_one_or_none()
+
         if not character:
             return 0.0
 
@@ -49,39 +53,42 @@ class PopularityService:
 
         # 1. 总互动量分数
         total_score = (
-                character.chat_count * weights['chat'] +
-                character.like_count * weights['like'] +
-                character.view_count * weights['view']
+                character.chat_count * weights['CHAT'] +
+                character.like_count * weights['LIKE'] +
+                character.view_count * weights['VIEW']
         )
 
         # 2. 近期热度分数（最近7天）
         week_ago = now - timedelta(days=7)
-        recent_stats = self.db.query(
-            func.sum(
-                func.case(
-                    (UserBehavior.behavior_type == BehaviorType.CHAT, weights['chat']),
-                    (UserBehavior.behavior_type == BehaviorType.LIKE, weights['like']),
-                    (UserBehavior.behavior_type == BehaviorType.VIEW, weights['view']),
-                    # else_=0
-                )
-            ).label('recent_score')
-        ).filter(
-            UserBehavior.character_id == character_id,
-            UserBehavior.created_at >= week_ago
-        ).scalar() or 0
+        recent_stats = await self.db.execute(
+            select(
+                func.sum(
+                    func.case(
+                        (UserBehavior.behavior_type == BehaviorType.CHAT, weights['CHAT']),
+                        (UserBehavior.behavior_type == BehaviorType.LIKE, weights['LIKE']),
+                        (UserBehavior.behavior_type == BehaviorType.VIEW, weights['VIEW']),
+                        else_=0
+                    )
+                ).label('recent_score')
+            ).where(
+                UserBehavior.character_id == character_id,
+                UserBehavior.created_at >= week_ago
+            )
+        )
+        recent_score = recent_stats.scalar() or 0
 
         # 3. 时间衰减因子（越近的行为权重越高）
         if character.last_used_at:
             days_since_last = (now - character.last_used_at).days
-            time_decay = max(0, 1 - (days_since_last * weights['decay']))
+            time_decay = max(0.0, 1 - (days_since_last * weights['DECAY']))
         else:
-            time_decay = 0
+            time_decay = 0.0
 
         # 综合评分
         final_score = (
-                total_score * 0.3 +  # 总量占比30%
-                recent_stats * weights['recent'] * 0.5 +  # 近期热度占比50%
-                time_decay * 100 * 0.2  # 活跃度占比20%
+                total_score * 0.3 +
+                recent_score * weights['RECENT'] * 0.5 +
+                time_decay * 100 * 0.2
         )
 
         return round(final_score, 2)

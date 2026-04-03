@@ -12,12 +12,16 @@ pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 def verify_password(plain_password: str, hashed_password: str) -> bool:
     """验证密码"""
     return pwd_context.verify(plain_password, hashed_password)
-
+async def verify_password_async(password, hashed):
+    return await asyncio.to_thread(verify_password, password, hashed)
 
 def get_hash_password(password: str) -> str:
     """加密密码"""
     return pwd_context.hash(password)
+import asyncio
 
+async def hash_password_async(password: str):
+    return await asyncio.to_thread(get_hash_password, password)
 
 def create_access_token(subject: str, expires_delta: timedelta = None):
     """创建JWT token"""

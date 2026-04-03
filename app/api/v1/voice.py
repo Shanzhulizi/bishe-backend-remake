@@ -1,23 +1,18 @@
 from fastapi import APIRouter, UploadFile, File, Form, HTTPException, Depends
-from sqlalchemy.orm import Session
+from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.api.deps import get_current_user, get_db
+from app.api.deps import get_current_user, get_async_db
 from app.core.constants import ResponseCode
 from app.core.logging import get_logger
 from app.models.user import User
 from app.schemas.common import ResponseModel
-from app.schemas.voice import CosyVoiceTTSRequest, CosyVoiceTTSResponse, TTSResponse, TTSRequest
+from app.schemas.voice import TTSResponse, TTSRequest
 from app.services.gpt_covits_service import GptCovitsService
-# from app.services.cosyvoice_service import cosyvoice_service
-# from app.services.cosyvoice2_stream_service import cosyvoice2_stream_service
-from app.services.no_use.cosyvoice2_service import cosyvoice2_service
 from app.services.voice_service import VoiceService
 
 router = APIRouter()
 
 logger = get_logger(__name__)
-voice_service = VoiceService()
-
 # TO DO 要截断音频，最长10秒
 # 不能截断，只给了提醒，截断了音频，参考文本又不能截断
 @router.post("/create")
@@ -25,29 +20,37 @@ async def create_voice(
         voice_name: str = Form(...),
         voice_text: str = Form(...),
         audio: UploadFile = File(...),
-        current_user: User = Depends(get_current_user)
+        current_user: User = Depends(get_current_user),
+        db: AsyncSession = Depends(get_async_db)
 ):
     try:
+        voice_service = VoiceService(db)
+
         voice_result = await voice_service.save_voice(audio, voice_name, voice_text, current_user.id)
+        await db.commit()
+        return {
+            "code": 200,
+            "message": "语音保存成功",
+            "data": {
+                "voice_id": voice_result["voice_id"],
+                "voice_wav_url": voice_result["voice_url"],
+                "duration": voice_result["duration"]
+            }
+        }
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
-
-    return {
-        "code": 200,
-        "message": "语音保存成功",
-        "data": {
-            "voice_id": voice_result["voice_id"],
-            "voice_wav_url": voice_result["voice_url"],
-            "duration": voice_result["duration"]
-        }
-    }
+    except Exception as e:
+        logger.error(f"创建声音失败: {e}")
+        await db.rollback()
+        return ResponseModel.error(code=ResponseCode.INTERNAL_ERROR, msg="语音保存失败")
 
 
 @router.get("/voices", summary="获取所有声音")
-async def list_voices(skip: int = 0, limit: int = 20):
+async def list_voices(skip: int = 0, limit: int = 20,
+        db: AsyncSession = Depends(get_async_db)):
+    voice_service = VoiceService(db)
     """获取所有已保存的声音"""
     voices = voice_service.get_all_voices(skip, limit)
-    # voices = db.list_voices(skip, limit)
 
     # 手动将每个 Voice 对象转换为字典
     voices_data = []
@@ -75,76 +78,33 @@ async def list_voices(skip: int = 0, limit: int = 20):
     }
 
 
-# @router.post("/cosyvoice/generate")
-# async def generate_voice(request: GenerateRequest):
-#     text = request.text,
-#     if isinstance(text, tuple):
-#         text = text[0]  # 提取第一个元素
-#     # print(text)
-#     voice_id = request.voice_id
-#
-#     logger.info(f"Generating voice for voice_id={voice_id} with text='{text}'")
-#
-#     audio_url = cosyvoice_service.generate(
-#         text,
-#         voice_id
-#     )
-#
-#     return {
-#         "code": 200,
-#         "message": "生成成功",
-#         "audio_url": audio_url
-#     }
 
-
-# @router.post("/cosyvoice2/generate")
-# async def generate_voice(request: GenerateRequest):
-#     text = request.text,
-#     if isinstance(text, tuple):
-#         text = text[0]  # 提取第一个元素
-#     # print(text)
-#     voice_id = request.voice_id
+# @router.post("/cosyvoice_tts")
+# async def cosyvoice_tts(
+#         req: CosyVoiceTTSRequest,
+#         db: Session = Depends(get_async_db)
+# ):
+#     try:
+#         logger.info("开始生成语音")
+#         text = req.text
+#         voice_id = req.voice_id
 #
-#     logger.info(f"Generating voice for voice_id={voice_id} with text='{text}'")
+#         audio_url = cosyvoice2_service.generate(
+#             text=text,
+#             voice_id=voice_id
+#         )
 #
-#     audio_url = cosyvoice2_service.generate(
-#         text,
-#         voice_id
-#     )
-#
-#     return {
-#         "code": 200,
-#         "message": "生成成功",
-#         "audio_url": audio_url
-#     }
-
-
-@router.post("/cosyvoice_tts")
-async def cosyvoice_tts(
-        req: CosyVoiceTTSRequest,
-        db: Session = Depends(get_db)
-):
-    try:
-        logger.info("开始生成语音")
-        text = req.text
-        voice_id = req.voice_id
-
-        audio_url = cosyvoice2_service.generate(
-            text=text,
-            voice_id=voice_id
-        )
-
-        logger.info(f"生成语音成功，URL: {audio_url}")
-        return ResponseModel.success(msg="语音生成成功", data=CosyVoiceTTSResponse(audio_url=audio_url)
-                                     )
-    except Exception as e:
-        logger.error(f"生成语音失败: {e}")
-        return ResponseModel.error(code=ResponseCode.INTERNAL_ERROR, msg="语音生成失败")
+#         logger.info(f"生成语音成功，URL: {audio_url}")
+#         return ResponseModel.success(msg="语音生成成功", data=CosyVoiceTTSResponse(audio_url=audio_url)
+#                                      )
+#     except Exception as e:
+#         logger.error(f"生成语音失败: {e}")
+#         return ResponseModel.error(code=ResponseCode.INTERNAL_ERROR, msg="语音生成失败")
 
 @router.post("/tts")
 async def generate(
         req: TTSRequest,
-        db: Session = Depends(get_db)
+        db: AsyncSession  = Depends(get_async_db)
 ):
     try:
         logger.info("开始生成语音")
@@ -152,7 +112,7 @@ async def generate(
         voice_id = req.voice_id
 
         gpt_covits_service = GptCovitsService(db)
-        audio_url = gpt_covits_service.generate_voice(
+        audio_url = await  gpt_covits_service.generate_voice(
             text=text,
             voice_id=voice_id
         )
@@ -163,23 +123,6 @@ async def generate(
         logger.error(f"生成语音失败: {e}")
         return ResponseModel.error(code=ResponseCode.INTERNAL_ERROR, msg="语音生成失败")
 
-
-# @router.post("/cosyvoice_tts_stream")
-# async def cosyvoice_tts(
-#         req: CosyVoiceTTSRequest
-# ):
-#     try:
-#         logger.info("开始生成语音")
-#         text = req.text
-#         voice_id = req.voice_id
-#
-#         return StreamingResponse(
-#             cosyvoice2_stream_service. generate_audio_stream(text, voice_id),
-#             media_type="audio/wav"
-#         )
-#     except Exception as e:
-#         logger.error(f"生成语音失败: {e}")
-#         return ResponseModel.error(code=ResponseCode.INTERNAL_ERROR, msg="语音生成失败")
 
 # =============================下面是旧接口======================================================
 

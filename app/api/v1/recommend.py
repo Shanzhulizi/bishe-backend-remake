@@ -1,40 +1,32 @@
 import random
 
 from fastapi import APIRouter, Depends, Query
-from sqlalchemy.orm import Session
+from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.api.deps import get_db, get_current_user
-from app.core.constants import ResponseCode
+from app.api.deps import get_async_db, get_current_user
 from app.core.logging import get_logger
 from app.models.user import User
-from app.schemas.common import ResponseModel
 from app.schemas.recommend import RecommendResponse
 from app.services.collaborative_service import CollaborativeService
-
 from app.services.preference_service import PreferenceService
 from app.services.recommend_service import RecommendService
 from app.services.vector_preference_service import VectorPreferenceService
-
 
 router = APIRouter()
 logger = get_logger(__name__)
 
 
-
 @router.get("/hot", response_model=RecommendResponse)
 async def get_hot(
         limit: int = 20,
-        db: Session = Depends(get_db)
+        db: AsyncSession = Depends(get_async_db)
 ):
     """
         热门推荐
     """
     try:
         recommend_service = RecommendService(db)
-        recommendations = recommend_service.get_hot(
-
-            limit=limit
-        )
+        recommendations = await recommend_service.get_hot(limit=limit)
 
         return RecommendResponse(
             msg="获取热门推荐成功",
@@ -45,7 +37,7 @@ async def get_hot(
     except Exception as e:
         logger.error(f"获取热门推荐失败: {e}")
         return RecommendResponse(
-            code=400,
+            code=500,
             msg="获取热门推荐失败",
 
         )
@@ -55,7 +47,7 @@ async def get_hot(
 async def get_popular(
         limit: int = 20,
         hours: int = 7 * 24,
-        db: Session = Depends(get_db)
+        db: AsyncSession = Depends(get_async_db)
 ):
     """
         近期流行
@@ -63,7 +55,7 @@ async def get_popular(
 
     try:
         recommend_service = RecommendService(db)
-        recommendations = recommend_service.get_popular(
+        recommendations = await  recommend_service.get_popular(
 
             limit=limit,
             hours=hours
@@ -85,10 +77,10 @@ async def get_popular(
 
 
 @router.get("/trending", response_model=RecommendResponse)
-async def get_popular(
+async def get_trending(
         limit: int = 20,
         hours: int = 24,
-        db: Session = Depends(get_db)
+        db: AsyncSession = Depends(get_async_db)
 ):
     """
         近期飙升
@@ -96,7 +88,7 @@ async def get_popular(
 
     try:
         recommend_service = RecommendService(db)
-        recommendations = recommend_service.get_trending(
+        recommendations = await recommend_service.get_trending(
 
             limit=limit,
             hours=hours
@@ -121,7 +113,7 @@ async def get_popular(
 async def get_personalized_recommendations(
         limit: int = Query(20, ge=1, le=50),
         days: int = Query(30, ge=7, le=90),
-        db: Session = Depends(get_db),
+        db: AsyncSession = Depends(get_async_db),
         current_user: User = Depends(get_current_user)
 ):
     """
@@ -129,7 +121,7 @@ async def get_personalized_recommendations(
     """
     try:
         service = PreferenceService(db)
-        characters = service.get_personalized_recommendations(
+        characters = await service.get_personalized_recommendations(
             user_id=current_user.id,
             limit=limit,
             days=days
@@ -159,7 +151,7 @@ async def get_vector_recommendations(
         limit: int = Query(20, ge=1, le=50),
         days: int = Query(30, ge=7, le=90),
         threshold: float = Query(0.1, ge=0.0, le=1.0),
-        db: Session = Depends(get_db),
+        db: AsyncSession = Depends(get_async_db),
         current_user: User = Depends(get_current_user)
 ):
     """
@@ -171,7 +163,7 @@ async def get_vector_recommendations(
     try:
         service = VectorPreferenceService(db)
 
-        characters = service.get_vector_recommendations(
+        characters = await service.get_vector_recommendations(
             user_id=current_user.id,
             limit=limit,
             days=days,
@@ -201,7 +193,7 @@ async def get_vector_recommendations(
 async def similar_recommend(
         limit: int = Query(20, ge=1, le=50),
         days: int = Query(30, ge=7, le=90),
-        db: Session = Depends(get_db),
+        db: AsyncSession = Depends(get_async_db),
         current_user: User = Depends(get_current_user)
 ):
     """
@@ -212,7 +204,7 @@ async def similar_recommend(
     try:
         service = CollaborativeService(db)
 
-        characters = service.get_collaborative_recommendations(
+        characters = await service.get_collaborative_recommendations(
             user_id=current_user.id,
             limit=limit,
             days=days
@@ -240,7 +232,7 @@ async def similar_recommend(
 @router.get("/mix", response_model=RecommendResponse)
 async def mix_recommend(
         limit: int = Query(20, ge=1, le=100),
-        db: Session = Depends(get_db),
+        db: AsyncSession = Depends(get_async_db),
         current_user: User = Depends(get_current_user)
 ):
     """
@@ -264,9 +256,9 @@ async def mix_recommend(
         recommended_ids = set()
 
         # 1. 用户偏好推荐
-        pref_characters = pref_service.get_personalized_recommendations(
+        pref_characters = await  pref_service.get_personalized_recommendations(
             user_id=current_user.id,
-            limit=pref_target*3+10,  # 多取一些候选，后面随机打乱再选
+            limit=pref_target * 3 + 10,  # 多取一些候选，后面随机打乱再选
         )
 
         # 随机打乱候选列表
@@ -278,9 +270,9 @@ async def mix_recommend(
             recommended_ids.add(char.id)
 
         # 2. 协同过滤推荐
-        collaborative_chars = collab_service.get_collaborative_recommendations(
+        collaborative_chars = await  collab_service.get_collaborative_recommendations(
             user_id=current_user.id,
-            limit=collab_target*3+10
+            limit=collab_target * 3 + 10
         )
         # 过滤掉已经在偏好推荐中的
         collaborative_chars = [c for c in collaborative_chars if c.id not in recommended_ids]
@@ -297,8 +289,8 @@ async def mix_recommend(
         # 3. 热门推荐（自动排除已推荐的）
         hot_chars = []
         if hot_target > 0:
-            hot_candidates = hot_service.get_hot_excluding(
-                limit=hot_target * 3+10,  # 多取3倍
+            hot_candidates = await  hot_service.get_hot_excluding(
+                limit=hot_target * 3 + 10,  # 多取3倍
                 exclude_ids=list(recommended_ids),
                 days=7
             )

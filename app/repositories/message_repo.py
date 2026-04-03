@@ -1,14 +1,15 @@
 from datetime import datetime
 from typing import Optional
 
-from sqlalchemy.orm import Session
+from sqlalchemy import select, func, desc
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.message import Message
 from app.schemas.message import MessageBase
 
 
 class MessageRepository:
-    def __init__(self, db: Session):
+    def __init__(self, db: AsyncSession):
         self.db = db
 
     async def create(self, conversation_id: int,
@@ -16,8 +17,8 @@ class MessageRepository:
                      content: str,
                      token_count: int | None = None,
                      in_context: bool = True,
-                     created_at :Optional[datetime] = None
-                     ):
+                     created_at: Optional[datetime] = None
+                     ) -> Message:
         if created_at is None:
             created_at = datetime.now()
 
@@ -28,24 +29,25 @@ class MessageRepository:
                           in_context=in_context,
                           created_at=created_at)
         self.db.add(message)
-        self.db.flush()  # 只 flush
+        await self.db.flush()  # 只 flush
         return message
 
-
-    def get_message_count(self, conv_id):
-        count = self.db.query(Message).filter(
+    async def get_message_count(self, conv_id):
+        """获取消息总数"""
+        stmt = select(func.count()).select_from(Message).where(
             Message.conversation_id == conv_id
-        ).count()
-        return count
+        )
+        result = await self.db.execute(stmt)
+        return result.scalar_one_or_none() or 0
 
-    def get_messages_page(self, conv_id, param):
+    async def get_messages_page(self, conv_id, param):
         """逆序再逆序是因为获取历史消息都是从下到上的，而展示消息又是从上到下的"""
-        messages = self.db.query(Message).filter(
+        stmt = select(Message).where(
             Message.conversation_id == conv_id
-        ).order_by(Message.created_at.desc()) \
-            .offset(param.offset) \
-            .limit(param.limit) \
-            .all()
+        ).order_by(desc(Message.created_at)).offset(param.offset).limit(param.limit)
+
+        result = await self.db.execute(stmt)
+        messages = result.scalars().all()
         history = [
             MessageBase(
                 sender_type=msg.sender_type,

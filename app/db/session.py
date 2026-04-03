@@ -1,18 +1,29 @@
-# 替换异步引擎为同步引擎
-from sqlalchemy import create_engine
-from sqlalchemy.orm import sessionmaker
+from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession, async_sessionmaker
 
 from app.core.config import settings
 
-print(settings.DATABASE_URL)
-engine = create_engine(
-    settings.DATABASE_URL,
+# print(settings.DATABASE_URL)
+async_engine = create_async_engine(
+    # settings.DATABASE_URL,
+    settings.ASYNC_DATABASE_URL,
     echo=False,
-    pool_pre_ping=True,
-    pool_size=20,
-    max_overflow=30,
-    pool_timeout=60,  # 获取连接的超时时间，从30秒适当调长
-    pool_recycle=3600  # 建议设置，防止连接被数据库服务端断开
+    pool_size=20,  # 连接池大小（根据并发量调整）
+    max_overflow=40,  # 最大溢出连接数
+    pool_timeout=30,  # 获取连接超时（秒）
+    pool_recycle=3600,  # 1小时回收连接
+    pool_pre_ping=True,  # 使用前检查连接
+    pool_use_lifo=True,  # 后进先出，提高热点连接利用率
 )
 
-SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
+# SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
+
+
+
+
+AsyncSessionLocal = async_sessionmaker(
+    async_engine,
+    class_=AsyncSession,
+    expire_on_commit=False,
+    autocommit=False,
+    autoflush=False,
+)
