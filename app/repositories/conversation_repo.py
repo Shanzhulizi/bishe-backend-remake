@@ -42,7 +42,7 @@ class ConversationRepository:
             character_id=character_id,
             title=title or "New Conversation",
             is_active=True,
-            last_message_at=func.now()  # 创建时也设置时间
+            last_message_at=func.now(),  # 创建时也设置时间
         )
         self.db.add(conversation)
         await self.db.flush()
@@ -120,3 +120,12 @@ class ConversationRepository:
             logger.error(f"保存摘要失败: {e}")
             await self.db.rollback()
             return False
+
+    async def get_by_id(self, conversation_id):
+        """获取活跃会话"""
+        stmt = select(Conversation).where(
+            Conversation.id == conversation_id,
+            Conversation.is_active == True
+        )
+        result = await self.db.execute(stmt)
+        return result.scalar_one_or_none()

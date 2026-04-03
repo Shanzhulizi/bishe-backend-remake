@@ -10,7 +10,7 @@ logger = get_logger(__name__)
 
 
 class EthicsService:
-    def __init__(self, model: str = "qwen2:7b"):
+    def __init__(self, model: str = "qwen2.5:3b"):
         self.model = model
 
         # 快速黑名单

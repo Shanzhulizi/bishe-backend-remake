@@ -26,6 +26,8 @@ class Conversation(Base):
     title = Column(String(100))
     is_active = Column(Boolean, nullable=False, default=True)
 
+    message_count = Column(BigInteger, default=0)
+
     # 长对话摘要（上下文压缩用）
     summary = Column(Text)
     summary_count = Column(BigInteger, default=0)

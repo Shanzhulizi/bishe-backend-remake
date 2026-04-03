@@ -19,6 +19,7 @@ from app.services.behavior_service import BehaviorService
 from app.services.character_service import CharacterService
 from app.services.conversation_service import ConversationService
 from app.services.ethics_service import EthicsService, ethics_service
+from fastapi import BackgroundTasks
 
 logger = get_logger(__name__)
 
@@ -50,7 +51,6 @@ class ChatService:
 
         try:
 
-
             # 1. 检查角色
             character = await self.character_repo.get_by_id(character_id)
             if not character:
@@ -66,7 +66,6 @@ class ChatService:
                 self.message_repo.get_messages_page(conversation.id, PageParams(page=1, page_size=10)),
                 self.conversation_service.get_history_summary(conversation.id, user_id, character_id)
             )
-
 
             #  这里应该搞吗？这里搞了那提示词不就没用了吗？
             # 2.5 检测用户内容是否违规
@@ -121,6 +120,9 @@ class ChatService:
                 #     reply_buffer += token
                 #     yield token
                 logger.info(f"LLM流式生成完成，回复内容：{reply_buffer}")
+
+                # ✅ 发送结束标记
+
                 # 6.5 检测生成内容是否违规,在生成完成后检测
                 is_safe, issue_type, _ = await ethics_service.check(reply_buffer)
 
@@ -130,13 +132,14 @@ class ChatService:
                     yield "\n\n[REPLACE_LAST]抱歉，我无法回答这个问题。"
                     reply_buffer = "抱歉，我无法回答这个问题。"
 
+                yield "[DONE]"
                 stream_success = True
                 # ✅ 流式完成后，触发异步摘要更新
-                asyncio.create_task(
-                    self.conversation_service.check_and_update_summary(
-                        conversation.id, user_id, character_id
-                    )
-                )
+                # asyncio.create_task(
+                #     self.conversation_service.check_and_update_summary(
+                #         conversation.id, user_id, character_id
+                #     )
+                # )
             except Exception as e:
                 logger.error(f"LLM流式生成失败: {e}")
                 # 生成错误信息给客户端
@@ -147,58 +150,173 @@ class ChatService:
                 await self.db.rollback()
                 return  # 直接返回，不执行后续保存
 
-            # 7. 只有在流式成功时才保存消息
-            if stream_success:
-                # 保存用户消息
-                await self.message_repo.create(
-                    conversation_id=conversation.id,
-                    sender_type="user",
-                    content=content,
-                    token_count=-1
-                )
+            # # 7. 只有在流式成功时才保存消息
+            # if stream_success:
+            #     # 保存用户消息
+            #     await self.message_repo.create(
+            #         conversation_id=conversation.id,
+            #         sender_type="user",
+            #         content=content,
+            #         token_count=-1
+            #     )
+            #
+            #     # 保存助手消息
+            #     await self.message_repo.create(
+            #         conversation_id=conversation.id,
+            #         sender_type="assistant",
+            #         content=reply_buffer,
+            #         token_count=-1
+            #     )
+            #
+            #     await self.conversation_repo.touch(conversation)
+            #
+            #     # ✅ 更新 message_count（在保存消息后）
+            #     conversation.message_count = (conversation.message_count or 0) + 2
+            #     self.db.add(conversation)
+            #
+            #     # 提交事务
+            #     await self.db.commit()
+            #     logger.info("消息保存成功")
+            #
+            #     # # 记录统计
+            #     # try:
+            #     #     behavior_service = BehaviorService(self.db)
+            #     #     await behavior_service.record_chat(user_id, character_id)
+            #     #
+            #     #     character_service = CharacterService(self.db)
+            #     #     await character_service.increment_chat_count(character_id)
+            #     #     await character_service.update_use_time(character_id)
+            #     #
+            #     #     await self.db.commit()
+            #     #     logger.info("聊天统计记录成功")
+            #     #
+            #     # except Exception as e:
+            #     #     # 出错时统一回滚
+            #     #
+            #     #     await self.db.rollback()
+            #     #     logger.error(f"记录聊天统计失败: {e}")
+            #
+            #     # ✅ 这些可以并行执行，不阻塞主流程
+            #     async def record_statistics():
+            #         try:
+            #             behavior_service = BehaviorService(self.db)
+            #             await behavior_service.record_chat(user_id, character_id)
+            #
+            #             character_service = CharacterService(self.db)
+            #             await character_service.increment_chat_count(character_id)
+            #             await character_service.update_use_time(character_id)
+            #
+            #             await self.db.commit()
+            #             logger.info("聊天统计记录成功")
+            #         except Exception as e:
+            #             logger.error(f"记录聊天统计失败: {e}")
+            #             await self.db.rollback()
+            #
+            #     # 后台执行统计记录（不等待）
+            #     asyncio.create_task(record_statistics())
+            #
+            #     # ==================== 摘要更新（后台任务） ====================
+            #     # ✅ 检查是否需要更新摘要（不阻塞主流程）
+            #     if conversation.message_count % 20 == 0:
+            #         logger.info(f"触发摘要更新: message_count={conversation.message_count}")
+            #         asyncio.create_task(
+            #             self.conversation_service.update_summary(
+            #                 conversation_id=conversation.id,
+            #                 new_messages=recent_history,  # 传入已有的历史消息
+            #                 existing_summary=history_summary  # 传入已有的摘要
+            #             )
+            #         )
+            #
+            # else:
+            #     # 流式失败，确保回滚
+            #
+            #     await self.db.rollback()
+            #     logger.warning("流式生成失败，未保存任何消息")
 
-                # 保存助手消息
-                await self.message_repo.create(
-                    conversation_id=conversation.id,
-                    sender_type="assistant",
-                    content=reply_buffer,
-                    token_count=-1
-                )
-
-                await self.conversation_repo.touch(conversation)
-
-                # 提交事务
-                await self.db.commit()
-                logger.info("消息保存成功")
-
-                # 记录统计
-                try:
-                    behavior_service = BehaviorService(self.db)
-                    await behavior_service.record_chat(user_id, character_id)
-
-                    character_service = CharacterService(self.db)
-                    await character_service.increment_chat_count(character_id)
-                    await character_service.update_use_time(character_id)
-
-                    await self.db.commit()
-                    logger.info("聊天统计记录成功")
-
-                except Exception as e:
-                    # 出错时统一回滚
-
-                    await self.db.rollback()
-                    logger.error(f"记录聊天统计失败: {e}")
-            else:
-                # 流式失败，确保回滚
-
-                await self.db.rollback()
-                logger.warning("流式生成失败，未保存任何消息")
-
+            # ✅ 所有数据库操作都放入后台任务
+            asyncio.create_task(self._save_conversation_data(
+                conversation_id=conversation.id,
+                user_id=user_id,
+                character_id=character_id,
+                user_content=content,
+                assistant_content=reply_buffer,
+                recent_history=recent_history,
+                history_summary=history_summary
+            ))
+            return
         except Exception as e:
             logger.error(f"发送消息失败: {e}")
             # 确保回滚
             if conversation:  # 只有有会话时才需要回滚
-
                 await self.db.rollback()
             # 重新抛出，让上层处理
             raise
+
+    async def _save_conversation_data(
+            self,
+            conversation_id:int,  # ✅ 直接传实体对象
+            user_id: int,
+            character_id: int,
+            user_content: str,
+            assistant_content: str,
+            recent_history: list,
+            history_summary: str
+    ):
+        """后台任务：保存消息、更新统计、更新摘要"""
+        from app.db.session import AsyncSessionLocal
+
+        async with AsyncSessionLocal() as db:
+            try:
+                message_repo = MessageRepository(db)
+                conversation_repo = ConversationRepository(db)
+                conversation = await conversation_repo.get_by_id(conversation_id)
+                # 1. 保存用户消息
+                await message_repo.create(
+                    conversation_id=conversation.id,
+                    sender_type="user",
+                    content=user_content,
+                    token_count=-1
+                )
+
+                # 2. 保存助手消息
+                await message_repo.create(
+                    conversation_id=conversation.id,
+                    sender_type="assistant",
+                    content=assistant_content,
+                    token_count=-1
+                )
+
+                # 3. 更新会话时间
+                await conversation_repo.touch(conversation)
+
+                # 4. 更新消息计数
+                conversation.message_count = (conversation.message_count or 0) + 2
+                db.add(conversation)
+
+                await db.commit()
+                logger.info(f"消息保存成功: conversation_id={conversation.id}")
+
+                # 5. 记录统计
+                behavior_service = BehaviorService(db)
+                await behavior_service.record_chat(user_id, character_id)
+
+                character_service = CharacterService(db)
+                await character_service.increment_chat_count(character_id)
+                await character_service.update_use_time(character_id)
+
+                await db.commit()
+                logger.info("聊天统计记录成功")
+
+                # 6. 摘要更新
+                if conversation.message_count and conversation.message_count % 20 == 0:
+                    logger.info(f"触发摘要更新: message_count={conversation.message_count}")
+                    conv_service = ConversationService(db)
+                    await conv_service.update_summary(
+                        conversation_id=conversation.id,
+                        new_messages=recent_history,
+                        existing_summary=history_summary
+                    )
+
+            except Exception as e:
+                logger.error(f"后台保存数据失败: {e}")
+                await db.rollback()
