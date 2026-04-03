@@ -6,7 +6,7 @@ from typing import Dict
 import aiohttp
 import ollama
 
-from app.ai.local_llm import LocalLLM
+from app.ai.local_llm import  SentimentLocalLLM
 from app.core.config import Settings
 from app.core.logging import get_logger
 
@@ -188,7 +188,7 @@ class EmotionService:
             {"role": "user", "content": prompt}
         ]
 
-        response = await LocalLLM.chat(
+        response = await SentimentLocalLLM.chat(
             messages=messages,
             model=self.model,
             temperature=0.1,

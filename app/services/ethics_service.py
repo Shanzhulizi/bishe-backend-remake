@@ -3,14 +3,14 @@ from typing import Tuple, Optional
 
 import ollama
 
-from app.ai.local_llm import LocalLLM
+from app.ai.local_llm import  SafetyLocalLLM
 from app.core.logging import get_logger
 
 logger = get_logger(__name__)
 
 
 class EthicsService:
-    def __init__(self, model: str = "qwen2.5:3b"):
+    def __init__(self, model: str = "qwen2:7b"):
         self.model = model
 
         # 快速黑名单
@@ -48,7 +48,7 @@ class EthicsService:
             {"role": "user", "content": prompt}
         ]
 
-        response = await LocalLLM.chat(
+        response = await SafetyLocalLLM.chat(
             messages=messages,
             model=self.model,
             temperature=0.3,
