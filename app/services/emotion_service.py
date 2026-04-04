@@ -181,7 +181,7 @@ class EmotionService:
         """调用本地模型"""
         prompt = f"""分析情感，只返回JSON：{{"emotion":"开心/悲伤/愤怒/恐惧/惊讶/疑惑/厌恶/平静","score":0.0-1.0}}
 
-文本：{text}"""
+        文本：{text}"""
 
         messages = [
             {"role": "system", "content": "你是情感分析专家，只返回JSON。"},

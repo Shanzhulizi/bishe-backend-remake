@@ -29,7 +29,7 @@ class ChatService:
 
     def __init__(self, db: AsyncSession):
         self.db = db
-        self.executor = ThreadPoolExecutor(max_workers=4)
+        # self.executor = ThreadPoolExecutor(max_workers=4)
 
         self.character_repo = CharacterRepository(db)
         self.conversation_repo = ConversationRepository(db)
@@ -107,9 +107,10 @@ class ChatService:
             # 6. 流式生成回复 - 这部分可能失败
 
             try:
-                async for token in chat_completion_stream(messages_for_llm):
-                    reply_buffer += token
-                    yield token
+                async with self._llm_semaphore:
+                    async for token in chat_completion_stream(messages_for_llm):
+                        reply_buffer += token
+                        yield token
                 # =====================
                 # async with self.__class__._llm_semaphore:
                 #     async for token in chat_completion_stream(messages_for_llm):
@@ -147,7 +148,7 @@ class ChatService:
                 yield error_msg
                 # 这里不重新抛出异常，让流程继续但跳过保存
                 # 但需要确保回滚
-                await self.db.rollback()
+                # await self.db.rollback()
                 return  # 直接返回，不执行后续保存
 
             # # 7. 只有在流式成功时才保存消息
@@ -254,7 +255,7 @@ class ChatService:
 
     async def _save_conversation_data(
             self,
-            conversation_id:int,  # ✅ 直接传实体对象
+            conversation_id:int,
             user_id: int,
             character_id: int,
             user_content: str,
@@ -320,3 +321,4 @@ class ChatService:
             except Exception as e:
                 logger.error(f"后台保存数据失败: {e}")
                 await db.rollback()
+

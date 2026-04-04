@@ -6,6 +6,7 @@ from fastapi.responses import StreamingResponse
 from app.api.deps import get_async_db
 from app.api.deps import get_current_user
 from app.core.logging import get_logger
+from app.db.session import AsyncSessionLocal
 from app.schemas.chat import ChatRequest
 from app.services.ars_service import ASRService
 from app.services.character_service import CharacterService
@@ -35,33 +36,33 @@ logger = get_logger(__name__)
 #     return {"reply": reply
 #             }
 
-
+"""
+    流式发送聊天回复
+"""
 @router.post("/stream")
 async def send_chat_stream(
         req: ChatRequest,
-        db=Depends(get_async_db),
+        # db=Depends(get_async_db),
         user=Depends(get_current_user)
 ):
     async def generator():
-        service = ChatService(db)
-        error_occurred = False
-        error_message = ""
-        try:
-            # service = ChatService(db)
-            async for token in service.send_message_stream(
-                    user_id=user.id,
-                    character_id=req.character_id,
-                    content=req.message
-            ):
-                # logger.info(f"发送chunk: {token[:20]}...")
+        async with AsyncSessionLocal() as db:
+            service = ChatService(db)
+            try:
+                async for token in service.send_message_stream(
+                        user_id=user.id,
+                        character_id=req.character_id,
+                        content=req.message
+                ):
+                    # logger.info(f"发送chunk: {token[:20]}...")
 
-                yield token
-                # 🔥 强制让出事件循环，确保数据被发送
-                await asyncio.sleep(0.0001)
-            logger.info("流式请求成功完成")
-        except Exception as e:
-            logger.info(f"流式请求发生错误: {e}")
-            yield f"\n\n[连接中断: {str(e)}]"
+                    yield token
+                    # 🔥 强制让出事件循环，确保数据被发送
+                    await asyncio.sleep(0.0001)
+                logger.info("流式请求成功完成")
+            except Exception as e:
+                logger.info(f"流式请求发生错误: {e}")
+                yield f"\n\n[连接中断: {str(e)}]"
 
     return StreamingResponse(
         generator(),
@@ -74,7 +75,6 @@ async def send_chat_stream(
             "Transfer-Encoding": "chunked",
         }
     )
-
 
 """
     播放文本的语音

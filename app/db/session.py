@@ -27,3 +27,15 @@ AsyncSessionLocal = async_sessionmaker(
     autocommit=False,
     autoflush=False,
 )
+
+
+#
+#
+# # 后台任务专用连接池（更小）
+# background_engine = create_async_engine(
+#     settings.ASYNC_DATABASE_URL,
+#     pool_size=5,
+#     max_overflow=10,
+# )
+#
+# BackgroundSessionLocal = async_sessionmaker(background_engine, class_=AsyncSession)

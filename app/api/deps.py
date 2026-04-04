@@ -28,7 +28,9 @@ async def get_async_db():
         except Exception:
             await session.rollback()
             raise
-
+        finally:
+            # ✅ async with 会自动关闭，这里不需要额外操作
+            pass
 """
 它不是登录逻辑，也不会真的去调用 /api/auth/login。
 
