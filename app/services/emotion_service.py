@@ -1,18 +1,54 @@
 import asyncio
 import json
 import re
+from pathlib import Path
 from typing import Dict
 
 import aiohttp
 import ollama
 
-from app.ai.local_llm import  SentimentLocalLLM
+import asyncio
+import json
+import re
+from typing import Dict
+from pathlib import Path
+
+import aiohttp
+import torch
+from transformers import BertTokenizer, BertForSequenceClassification
+
+from app.ai.local_llm import SentimentLocalLLM
+from app.core.config import Settings
+from app.core.logging import get_logger
+
+from app.ai.local_llm import SentimentLocalLLM
 from app.core.config import Settings
 from app.core.logging import get_logger
 
 logger = get_logger(__name__)
 
 settings = Settings()
+id_to_emotion = {
+    0: '伤心',
+    1: '快乐',
+    2: '喜欢',
+    3: '愤怒',
+    4: '恐惧',
+    5: '惊讶',
+    6: '厌恶',
+
+}
+
+emotion_to_tone = {
+    '伤心': '温柔安慰',
+    '快乐': '活泼欢快',
+    '喜欢': '热情回应',
+    '愤怒': '冷静安抚',
+    '恐惧': '温和鼓励',
+    '惊讶': '积极回应',
+    '厌恶': '保持距离',
+
+}
 
 
 class EmotionService:
@@ -37,6 +73,15 @@ class EmotionService:
             '平静': ['嗯', '哦', '好的', '知道了']
         }
 
+        # ============ BERT 模型配置 ============
+        self.bert_model_path = "E:/Code/Python/emotion_analyze/bert_chinese_ocemotion"  # BERT 模型路径
+        self.bert_model = None
+        self.bert_tokenizer = None
+        self.device = None
+        self.use_bert = False  # 是否使用 BERT
+
+        # 尝试加载 BERT 模型
+        self._load_bert_model()
 
     async def analyze_use_api(self, text: str) -> Dict:
         """使用 DeepSeek 分析文本情感"""
@@ -154,9 +199,56 @@ class EmotionService:
         #     return self._cache[cache_key]
 
         # 3. 调用本地模型
-        result = await self._call_llm(text)
+        # result = await self._call_llm(text)
         # self._cache[cache_key] = result
+        result = await self.analyze_with_bert(text)
+
         return result
+
+    async def analyze_with_bert(self, text: str) -> Dict:
+        """使用 BERT 进行情感分析（异步包装）"""
+        try:
+            # BERT 推理（同步，但在线程池中执行避免阻塞）
+            loop = asyncio.get_event_loop()
+            result = await loop.run_in_executor(None, self._bert_predict, text)
+            return result
+        except Exception as e:
+            logger.error(f"BERT 情感分析失败: {e}")
+            return self._default_response()
+
+    def _bert_predict(self, text: str) -> Dict:
+        """BERT 同步预测"""
+        # 编码
+        inputs = self.bert_tokenizer(
+            text,
+            truncation=True,
+            padding='max_length',
+            max_length=128,
+            return_tensors='pt'
+        )
+        inputs = {k: v.to(self.device) for k, v in inputs.items()}
+
+        # 推理
+        with torch.no_grad():
+            outputs = self.bert_model(**inputs)
+
+        # 获取结果
+
+        logits = outputs.logits if hasattr(outputs, 'logits') else outputs
+        probs = torch.softmax(logits, dim=1)
+        confidence = torch.max(probs).item()
+        pred_id = torch.argmax(probs).item()
+
+        # 获取 BERT 原始情感
+        emotion = id_to_emotion.get(pred_id, '平静')
+
+        # 构建返回结果
+        return {
+            'emotion': emotion,
+            'score': confidence,
+            'tone': emotion_to_tone.get(emotion,'无'),
+
+        }
 
     def _quick_match(self, text: str) -> Dict | None:
         """快速关键词匹配"""
@@ -223,6 +315,29 @@ class EmotionService:
             '厌恶': '保持距离', '平静': '自然对话'
         }
         return tones.get(emotion, '自然对话')
+
+    def _load_bert_model(self):
+        """加载 BERT 模型"""
+        try:
+            if Path(self.bert_model_path).exists():
+                logger.info(f"正在加载 BERT 模型: {self.bert_model_path}")
+
+                # 设置设备
+                self.device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+
+                # 加载模型和分词器
+                self.bert_tokenizer = BertTokenizer.from_pretrained(self.bert_model_path)
+                self.bert_model = BertForSequenceClassification.from_pretrained(self.bert_model_path)
+                self.bert_model.to(self.device)
+                self.bert_model.eval()
+
+
+                self.use_bert = True
+                logger.info(f"BERT 模型加载成功，使用设备: {self.device}")
+            else:
+                logger.warning(f"BERT 模型不存在: {self.bert_model_path}，将使用 LLM 模式")
+        except Exception as e:
+            logger.error(f"加载 BERT 模型失败: {e}")
 
 
 # 创建全局实例
