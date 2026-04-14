@@ -17,7 +17,6 @@ router = APIRouter()
 
 logger = get_logger(__name__)
 
-
 # @router.post("/send", response_model=ChatResponse)
 # async def send_chat(
 #         req: ChatRequest,
@@ -39,6 +38,8 @@ logger = get_logger(__name__)
 """
     流式发送聊天回复
 """
+
+
 @router.post("/stream")
 async def send_chat_stream(
         req: ChatRequest,
@@ -76,27 +77,6 @@ async def send_chat_stream(
         }
     )
 
-"""
-    播放文本的语音
-"""
-
-
-# @router.post("/tts")
-# async def tts(
-#     req: TTSRequest
-# ):
-#
-#     audio_url = await TTSService.text_to_speech(
-#         text=req.text,
-#         character_id=req.character_id,
-#         # voice_style=req.voice_style
-#         voice_code=req.voice_code
-#     )
-#
-#     return {
-#         "audio_url": audio_url
-#     }
-#
 
 
 @router.post("/voice_chat")
@@ -127,11 +107,14 @@ async def voice_chat(
     reply_buffer = ""
     try:
         async for token in chat_service.send_message_stream(
-                db=db,
+
                 user_id=user.id,
                 character_id=character_id,
                 content=user_text
         ):
+            # ✅ 检查是否是结束标记
+            if token == "[DONE]":
+                break
             reply_buffer += token
             # 可以在这里做流式处理（如果 WebSocket 的话）
 
@@ -146,11 +129,11 @@ async def voice_chat(
     # 3. TTS
     try:
         character_service = CharacterService(db)
-        character = character_service.get_character(character_id)
+        character = await character_service.get_character(character_id)
         voice_id = character.voice_id if character else None
         gpt_covits_service = GptCovitsService(db)
         logger.info(f"使用角色 {character_id} 的 voice_id {voice_id} 进行 TTS")
-        audio_url = gpt_covits_service.generate_voice(
+        audio_url = await gpt_covits_service.generate_voice(
             text=reply_text,
             voice_id=voice_id
         )

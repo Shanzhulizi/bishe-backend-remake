@@ -112,20 +112,42 @@ class CharacterRepository:
         self.db.add(character)
         await self.db.flush()
 
+        await self.db.refresh(character, attribute_names=['categories', 'tags'])
+        # =======================
+        # ✅ 分类：异步安全写法
+        # =======================
         if data.category_ids:
             stmt = select(Category).where(Category.id.in_(data.category_ids))
             result = await self.db.execute(stmt)
             categories = result.scalars().all()
-            character.categories = categories
+            # ❌ 不要直接 = 赋值
+            # character.categories = categories
+            # ✅ 必须用 append
+            for cat in categories:
+                character.categories.append(cat)
 
+        # =======================
+        # ✅ 标签：异步安全写法
+        # =======================
         if data.tag_ids:
             stmt = select(Tag).where(Tag.id.in_(data.tag_ids))
             result = await self.db.execute(stmt)
             tags = result.scalars().all()
-            character.tags = tags
+            # ❌ 不要直接 = 赋值
+            # character.tags = tags
+            # ✅ 必须用 append
+            for tag in tags:
+                character.tags.append(tag)
 
         await self.db.commit()
-        await self.db.refresh(character)
+
+        # ✅ 关键：commit 后重新加载对象及其关系
+        stmt = select(Character).where(Character.id == character.id).options(
+            selectinload(Character.categories),
+            selectinload(Character.tags)
+        )
+        result = await self.db.execute(stmt)
+        character = result.scalar_one()
         return character
 
     async def update_basic(self, character: Character, **kwargs) -> Character:

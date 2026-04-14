@@ -41,7 +41,7 @@ class EthicsService:
         """调用本地模型"""
         prompt = f"""你是内容安全审核员，判断文本是否违规，只对较为严重的违规内容视为违规，只返回JSON：{{"safe":true/false,"type":"违规类型","reply":"建议回复"}}
 
-文本内容：{text}"""
+        文本内容：{text}"""
 
         messages = [
             {"role": "system", "content": "你是安全审核员，判断内容是否违规，只对较为严重的违规内容视为违规。只返回JSON。"},

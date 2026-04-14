@@ -50,7 +50,7 @@ async def list_voices(skip: int = 0, limit: int = 20,
         db: AsyncSession = Depends(get_async_db)):
     voice_service = VoiceService(db)
     """获取所有已保存的声音"""
-    voices = voice_service.get_all_voices(skip, limit)
+    voices =await voice_service.get_all_voices(skip, limit)
 
     # 手动将每个 Voice 对象转换为字典
     voices_data = []

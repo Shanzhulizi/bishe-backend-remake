@@ -23,7 +23,7 @@ async def build_system_prompt(character, content: str, history: List[Dict] = Non
     角色简介：{character.description}，
     角色设定：{character.worldview}。
     【重要规则】
-    1. 记住之前的对话内容，保持连贯性
+    1. 合理使用之前的对话内容，保持连贯性
     2. 用符合角色性格的方式回应用户
     3. 在用户提及名字、喜好等信息时，要记住并在后续对话中使用
     4. 回复要自然流畅，不要重复同样的话
