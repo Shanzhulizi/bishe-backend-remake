@@ -16,4 +16,10 @@ class MessageService:
 
         return messages
 
-
+    async def insert_greeting(self,conv_id,greeting):
+        await self.message_repo.create(
+            conversation_id=conv_id,
+            sender_type="assistant",
+            content=greeting,
+            token_count=-1
+        )

@@ -94,7 +94,8 @@ class CharacterListItem(BaseModel):
     tags: List[TagInfo] = []
     popularity_score: float
     chat_count : int
-
+    like_count: int
+    view_count :int
     class Config:
         from_attributes = True
 

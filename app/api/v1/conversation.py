@@ -2,6 +2,8 @@ from fastapi import APIRouter, Depends, Query
 
 from app.api.deps import get_current_user, get_async_db
 from app.core.logging import get_logger
+from app.schemas.common import ResponseModel
+from app.schemas.conversation import CreateConversationRequest
 from app.schemas.message import MessagePageResponse
 from app.schemas.page import PageParams, Pagination
 from app.services.behavior_service import BehaviorService
@@ -72,3 +74,27 @@ async def get_history(character_id: int,
                 total=0
             )
         )
+
+
+@router.post("/")
+async def create_conversation(
+        # character_id: int, greeting: str,
+
+                              req: CreateConversationRequest,
+
+                              db=Depends(get_async_db),
+                              user=Depends(get_current_user)
+                              ):
+    try:
+        conv_service = ConversationService(db)
+        message_service = MessageService(db)
+        conv = await conv_service.create_conv(user_id=user.id, character_id=req.character_id)
+        logger.info(f"创建会话成功，用户 {user.id} 与角色 {req.character_id} 的会话ID为 {conv.id}")
+        # 在创建会话时就可以把开场白插入了
+        await message_service.insert_greeting(conv.id,req. greeting)
+        await db.commit()
+        logger.info(f"插入开场白成功，conversation_id: {conv.id}, greeting: {req.greeting}")
+        return ResponseModel.success(data={"conversation_id": conv.id})
+    except Exception as e:
+        logger.error(f"创建 ConversationService 失败: {e}")
+        return ResponseModel(code=400, message="创建会话失败")

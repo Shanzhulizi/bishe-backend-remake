@@ -43,6 +43,7 @@ class ChatService:
             user_id: int,
             character_id: int,
             content: str,
+            conversation_id: int = None,
     ) -> AsyncGenerator[str, None]:
         loop = asyncio.get_event_loop()
         reply_buffer = ""
@@ -56,8 +57,12 @@ class ChatService:
             if not character:
                 raise HTTPException(status_code=404, detail="角色不存在")
 
-            # 2. 获取或创建会话
-            conversation = await self.conversation_repo.get_active(user_id, character_id)
+            if conversation_id is None:
+                # 2. 获取或创建会话
+                conversation = await self.conversation_repo.get_active(user_id, character_id)
+            else:
+                conversation = await self.conversation_repo.get_by_id(conversation_id)
+
             if not conversation:
                 conversation = await self.conversation_repo.create(user_id, character_id)
 

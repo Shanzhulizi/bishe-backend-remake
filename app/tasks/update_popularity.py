@@ -88,7 +88,7 @@ def update_popularity_job():
         loop = asyncio.get_event_loop()
         if loop.is_running():
             # 如果循环正在运行，创建任务
-            asyncio.create_task(update_popularity_job_async())
+            asyncio.run(update_popularity_job_async())
         else:
             # 否则运行直到完成
             loop.run_until_complete(update_popularity_job_async())

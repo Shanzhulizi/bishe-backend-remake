@@ -17,6 +17,7 @@ class ChatMessage(BaseModel):
 class ChatRequest(BaseModel):
     character_id: int
     message: str
+    conversation_id: Optional[int] = None
     # history: List[ChatMessage] = Field(default_factory=list)
 
 
